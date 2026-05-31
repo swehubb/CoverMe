@@ -1,0 +1,139 @@
+0 verbose cli /opt/homebrew/Cellar/node/25.6.1_1/bin/node /opt/homebrew/bin/npm
+1 info using npm@11.9.0
+2 info using node@v25.6.1
+3 silly config load:file:/opt/homebrew/lib/node_modules/npm/npmrc
+4 silly config load:file:/Users/swedhaprabakaran/Documents/CoverMe/.npmrc
+5 silly config load:file:/Users/swedhaprabakaran/.npmrc
+6 silly config load:file:/opt/homebrew/etc/npmrc
+7 verbose title npm install react react-dom react-router-dom chart.js react-chartjs-2
+8 verbose argv "install" "react" "react-dom" "react-router-dom" "chart.js" "react-chartjs-2" "--cache" ".npm-cache"
+9 verbose logfile logs-max:10 dir:/Users/swedhaprabakaran/Documents/CoverMe/.npm-cache/_logs/2026-05-20T13_57_53_525Z-
+10 verbose logfile /Users/swedhaprabakaran/Documents/CoverMe/.npm-cache/_logs/2026-05-20T13_57_53_525Z-debug-0.log
+11 silly logfile done cleaning log files
+12 silly packumentCache heap:4496293888 maxSize:1124073472 maxEntrySize:562036736
+13 silly idealTree buildDeps
+14 silly fetch manifest react@*
+15 silly packumentCache full:https://registry.npmjs.org/react cache-miss
+16 http fetch GET 200 https://registry.npmjs.org/npm 472ms
+17 http fetch GET 200 https://registry.npmjs.org/react 630ms (cache miss)
+18 silly packumentCache full:https://registry.npmjs.org/react set size:undefined disposed:false
+19 silly fetch manifest react-dom@*
+20 silly packumentCache full:https://registry.npmjs.org/react-dom cache-miss
+21 http fetch GET 200 https://registry.npmjs.org/react-dom 358ms (cache miss)
+22 silly packumentCache full:https://registry.npmjs.org/react-dom set size:undefined disposed:false
+23 silly fetch manifest react-router-dom@*
+24 silly packumentCache full:https://registry.npmjs.org/react-router-dom cache-miss
+25 http fetch GET 200 https://registry.npmjs.org/react-router-dom 364ms (cache miss)
+26 silly packumentCache full:https://registry.npmjs.org/react-router-dom set size:undefined disposed:false
+27 silly fetch manifest chart.js@*
+28 silly packumentCache full:https://registry.npmjs.org/chart.js cache-miss
+29 http fetch GET 200 https://registry.npmjs.org/chart.js 90ms (cache miss)
+30 silly packumentCache full:https://registry.npmjs.org/chart.js set size:undefined disposed:false
+31 silly fetch manifest react-chartjs-2@*
+32 silly packumentCache full:https://registry.npmjs.org/react-chartjs-2 cache-miss
+33 http fetch GET 200 https://registry.npmjs.org/react-chartjs-2 91ms (cache miss)
+34 silly packumentCache full:https://registry.npmjs.org/react-chartjs-2 set size:undefined disposed:false
+35 silly placeDep ROOT chart.js@4.5.1 OK for: coverme@1.0.0 want: *
+36 silly placeDep ROOT react@19.2.6 OK for: coverme@1.0.0 want: *
+37 silly placeDep ROOT react-chartjs-2@5.3.1 OK for: coverme@1.0.0 want: *
+38 silly placeDep ROOT react-dom@19.2.6 OK for: coverme@1.0.0 want: *
+39 silly placeDep ROOT react-router-dom@7.15.1 OK for: coverme@1.0.0 want: *
+40 silly fetch manifest @kurkle/color@^0.3.0
+41 silly packumentCache full:https://registry.npmjs.org/@kurkle%2fcolor cache-miss
+42 silly fetch manifest scheduler@^0.27.0
+43 silly packumentCache full:https://registry.npmjs.org/scheduler cache-miss
+44 silly fetch manifest react-router@7.15.1
+45 silly packumentCache full:https://registry.npmjs.org/react-router cache-miss
+46 http fetch GET 200 https://registry.npmjs.org/@kurkle%2fcolor 111ms (cache miss)
+47 silly packumentCache full:https://registry.npmjs.org/@kurkle%2fcolor set size:undefined disposed:false
+48 http fetch GET 200 https://registry.npmjs.org/scheduler 225ms (cache miss)
+49 silly packumentCache full:https://registry.npmjs.org/scheduler set size:undefined disposed:false
+50 http fetch GET 200 https://registry.npmjs.org/react-router 566ms (cache miss)
+51 silly packumentCache full:https://registry.npmjs.org/react-router set size:undefined disposed:false
+52 silly placeDep ROOT @kurkle/color@0.3.4 OK for: chart.js@4.5.1 want: ^0.3.0
+53 silly placeDep ROOT scheduler@0.27.0 OK for: react-dom@19.2.6 want: ^0.27.0
+54 silly fetch manifest react@>=18
+55 silly packumentCache full:https://registry.npmjs.org/react cache-miss
+56 http cache https://registry.npmjs.org/react 12ms (cache hit)
+57 silly packumentCache full:https://registry.npmjs.org/react set size:6650647 disposed:false
+58 silly fetch manifest react-dom@>=18
+59 silly packumentCache full:https://registry.npmjs.org/react-dom cache-miss
+60 http cache https://registry.npmjs.org/react-dom 10ms (cache hit)
+61 silly packumentCache full:https://registry.npmjs.org/react-dom set size:8868827 disposed:false
+62 silly placeDep ROOT react-router@7.15.1 OK for: react-router-dom@7.15.1 want: 7.15.1
+63 silly fetch manifest cookie@^1.0.1
+64 silly packumentCache full:https://registry.npmjs.org/cookie cache-miss
+65 silly fetch manifest set-cookie-parser@^2.6.0
+66 silly packumentCache full:https://registry.npmjs.org/set-cookie-parser cache-miss
+67 http fetch GET 200 https://registry.npmjs.org/cookie 91ms (cache miss)
+68 silly packumentCache full:https://registry.npmjs.org/cookie set size:undefined disposed:false
+69 http fetch GET 200 https://registry.npmjs.org/set-cookie-parser 96ms (cache miss)
+70 silly packumentCache full:https://registry.npmjs.org/set-cookie-parser set size:undefined disposed:false
+71 silly placeDep ROOT cookie@1.1.1 OK for: react-router@7.15.1 want: ^1.0.1
+72 silly placeDep ROOT set-cookie-parser@2.7.2 OK for: react-router@7.15.1 want: ^2.6.0
+73 silly reify moves {}
+74 silly audit bulk request {
+74 silly audit   'chart.js': [ '4.5.1' ],
+74 silly audit   react: [ '19.2.6' ],
+74 silly audit   'react-chartjs-2': [ '5.3.1' ],
+74 silly audit   'react-dom': [ '19.2.6' ],
+74 silly audit   'react-router-dom': [ '7.15.1' ],
+74 silly audit   '@kurkle/color': [ '0.3.4' ],
+74 silly audit   scheduler: [ '0.27.0' ],
+74 silly audit   'react-router': [ '7.15.1' ],
+74 silly audit   cookie: [ '1.1.1' ],
+74 silly audit   'set-cookie-parser': [ '2.7.2' ]
+74 silly audit }
+75 http cache set-cookie-parser@https://registry.npmjs.org/set-cookie-parser/-/set-cookie-parser-2.7.2.tgz 0ms (cache hit)
+76 http cache scheduler@https://registry.npmjs.org/scheduler/-/scheduler-0.27.0.tgz 0ms (cache hit)
+77 http cache cookie@https://registry.npmjs.org/cookie/-/cookie-1.1.1.tgz 0ms (cache hit)
+78 http cache react-router@https://registry.npmjs.org/react-router/-/react-router-7.15.1.tgz 1ms (cache hit)
+79 http cache @kurkle/color@https://registry.npmjs.org/@kurkle/color/-/color-0.3.4.tgz 0ms (cache hit)
+80 http cache react-dom@https://registry.npmjs.org/react-dom/-/react-dom-19.2.6.tgz 0ms (cache hit)
+81 http cache react-chartjs-2@https://registry.npmjs.org/react-chartjs-2/-/react-chartjs-2-5.3.1.tgz 0ms (cache hit)
+82 http cache react-router-dom@https://registry.npmjs.org/react-router-dom/-/react-router-dom-7.15.1.tgz 0ms (cache hit)
+83 http cache react@https://registry.npmjs.org/react/-/react-19.2.6.tgz 0ms (cache hit)
+84 http cache chart.js@https://registry.npmjs.org/chart.js/-/chart.js-4.5.1.tgz 0ms (cache hit)
+85 silly tarball no local data for set-cookie-parser@https://registry.npmjs.org/set-cookie-parser/-/set-cookie-parser-2.7.2.tgz. Extracting by manifest.
+86 silly tarball no local data for scheduler@https://registry.npmjs.org/scheduler/-/scheduler-0.27.0.tgz. Extracting by manifest.
+87 silly tarball no local data for cookie@https://registry.npmjs.org/cookie/-/cookie-1.1.1.tgz. Extracting by manifest.
+88 silly tarball no local data for react-router@https://registry.npmjs.org/react-router/-/react-router-7.15.1.tgz. Extracting by manifest.
+89 silly tarball no local data for @kurkle/color@https://registry.npmjs.org/@kurkle/color/-/color-0.3.4.tgz. Extracting by manifest.
+90 silly tarball no local data for react-dom@https://registry.npmjs.org/react-dom/-/react-dom-19.2.6.tgz. Extracting by manifest.
+91 silly tarball no local data for react-chartjs-2@https://registry.npmjs.org/react-chartjs-2/-/react-chartjs-2-5.3.1.tgz. Extracting by manifest.
+92 silly tarball no local data for react-router-dom@https://registry.npmjs.org/react-router-dom/-/react-router-dom-7.15.1.tgz. Extracting by manifest.
+93 silly tarball no local data for react@https://registry.npmjs.org/react/-/react-19.2.6.tgz. Extracting by manifest.
+94 silly tarball no local data for chart.js@https://registry.npmjs.org/chart.js/-/chart.js-4.5.1.tgz. Extracting by manifest.
+95 http fetch GET 200 https://registry.npmjs.org/scheduler/-/scheduler-0.27.0.tgz 89ms (cache miss)
+96 http fetch GET 200 https://registry.npmjs.org/set-cookie-parser/-/set-cookie-parser-2.7.2.tgz 93ms (cache miss)
+97 http fetch POST 200 https://registry.npmjs.org/-/npm/v1/security/advisories/bulk 266ms
+98 silly audit report {}
+99 http fetch GET 200 https://registry.npmjs.org/react-router-dom/-/react-router-dom-7.15.1.tgz 292ms (cache miss)
+100 http fetch GET 200 https://registry.npmjs.org/react-chartjs-2/-/react-chartjs-2-5.3.1.tgz 297ms (cache miss)
+101 http fetch GET 200 https://registry.npmjs.org/@kurkle/color/-/color-0.3.4.tgz 328ms (cache miss)
+102 http fetch GET 200 https://registry.npmjs.org/react/-/react-19.2.6.tgz 345ms (cache miss)
+103 http fetch GET 200 https://registry.npmjs.org/cookie/-/cookie-1.1.1.tgz 347ms (cache miss)
+104 http fetch GET 200 https://registry.npmjs.org/react-dom/-/react-dom-19.2.6.tgz 581ms (cache miss)
+105 http fetch GET 200 https://registry.npmjs.org/chart.js/-/chart.js-4.5.1.tgz 598ms (cache miss)
+106 http fetch GET 200 https://registry.npmjs.org/react-router/-/react-router-7.15.1.tgz 1119ms (cache miss)
+107 silly ADD node_modules/set-cookie-parser
+108 silly ADD node_modules/cookie
+109 silly ADD node_modules/react-router
+110 silly ADD node_modules/scheduler
+111 silly ADD node_modules/@kurkle/color
+112 silly ADD node_modules/react-router-dom
+113 silly ADD node_modules/react-dom
+114 silly ADD node_modules/react-chartjs-2
+115 silly ADD node_modules/react
+116 silly ADD node_modules/chart.js
+117 verbose cwd /Users/swedhaprabakaran/Documents/CoverMe
+118 verbose os Darwin 24.3.0
+119 verbose node v25.6.1
+120 verbose npm  v11.9.0
+121 notice
+121 notice New minor version of npm available! 11.9.0 -> 11.14.1
+121 notice Changelog: https://github.com/npm/cli/releases/tag/v11.14.1
+121 notice To update run: npm install -g npm@11.14.1
+121 notice  { force: true, Symbol(proc-log.meta): true }
+122 verbose exit 0
+123 info ok
