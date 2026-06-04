@@ -1,0 +1,92 @@
+export const ipptLogs = [
+  {
+    id: 'ippt-01',
+    date: '2026-06-15',
+    pushUps: 22,
+    sitUps: 28,
+    runTime: '14:00',
+    runSeconds: 840,
+    totalScore: 39,
+    label: 'BMT Week 2',
+  },
+  {
+    id: 'ippt-02',
+    date: '2026-07-20',
+    pushUps: 30,
+    sitUps: 34,
+    runTime: '13:00',
+    runSeconds: 780,
+    totalScore: 52,
+    label: 'BMT Week 7',
+  },
+  {
+    id: 'ippt-03',
+    date: '2026-08-10',
+    pushUps: 35,
+    sitUps: 38,
+    runTime: '12:20',
+    runSeconds: 740,
+    totalScore: 60,
+    label: 'BMT POP',
+  },
+  {
+    id: 'ippt-04',
+    date: '2026-11-15',
+    pushUps: 42,
+    sitUps: 42,
+    runTime: '11:10',
+    runSeconds: 670,
+    totalScore: 73,
+    label: 'Unit IPPT 2',
+  },
+  {
+    id: 'ippt-05',
+    date: '2027-01-20',
+    pushUps: 48,
+    sitUps: 46,
+    runTime: '10:40',
+    runSeconds: 640,
+    totalScore: 79,
+    label: 'Latest',
+  },
+];
+
+export const trainingFeed = [
+  {
+    id: 'train-01',
+    memberName: 'CPL Lim Jun Jie',
+    type: 'Run',
+    detail: '2.4km in 10:45',
+    timestamp: '2027-01-20T07:30:00',
+  },
+  {
+    id: 'train-02',
+    memberName: 'PTE Muhammad Irfan',
+    type: 'Circuit',
+    detail: 'Push-ups, sit-ups, and shuttle runs',
+    timestamp: '2027-01-19T18:10:00',
+  },
+  {
+    id: 'train-03',
+    memberName: 'PTE Darren Chua',
+    type: 'Push-ups',
+    detail: '3 sets x 18 reps',
+    timestamp: '2027-01-18T20:00:00',
+  },
+  {
+    id: 'train-04',
+    memberName: 'PTE Kevin Lee',
+    type: 'Run',
+    detail: '2.4km in 12:15',
+    timestamp: '2027-01-17T07:00:00',
+  },
+  {
+    id: 'train-05',
+    memberName: 'CPL Jonathan Tay',
+    type: 'Mobility',
+    detail: 'Recovery stretch and core reset after route march week',
+    timestamp: '2027-01-16T21:00:00',
+  },
+];
+
+export default { ipptLogs, trainingFeed };

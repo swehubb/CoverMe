@@ -17,10 +17,16 @@ import {
   useSearchParams,
   useNavigate,
 } from 'react-router-dom';
-import { answerNsQuestion, analyzeSentiment, loginWithSingPass } from './mockServices';
+import { useAuth } from './contexts/AuthContext';
+import Navbar from './components/layout/Navbar';
+import PageWrapper from './components/layout/PageWrapper';
+import ORDCountdown from './components/shared/ORDCountdown';
+import FeatureCard from './components/shared/FeatureCard';
+import { peerIntelPosts } from './data/mockPeerIntel';
+import { peerWallPosts } from './data/mockPeerWall';
+import { answerNsQuestion, analyzeSentiment } from './mockServices';
 import {
   buildTrainingPlan,
-  peerPosts,
   starterQuestions,
   trainingActivity,
   unitRoster,
@@ -66,7 +72,8 @@ const defaultState = {
     ],
   },
   community: {
-    posts: peerPosts,
+    intelPosts: peerIntelPosts,
+    wallPosts: peerWallPosts,
     concerns: [],
   },
   social: {
@@ -77,12 +84,31 @@ const defaultState = {
   },
 };
 
+function normalizeProfile(profile) {
+  if (!profile) return null;
+
+  const fullName = profile.fullName || profile.name || 'WEI';
+  const pesStatus = profile.pesStatus || profile.pes || 'B1';
+
+  return {
+    ...profile,
+    fullName,
+    pesStatus,
+    vocation: profile.vocation || (profile.unit?.includes('SIR') ? 'Infantry' : 'General'),
+    unit: profile.unit || '3 SIR',
+    enlistmentDate: profile.enlistmentDate || '2026-05-01',
+  };
+}
+
 function loadState() {
   const saved = localStorage.getItem(STORAGE_KEY);
   if (!saved) return defaultState;
 
   try {
     const parsed = JSON.parse(saved);
+    if (parsed?.auth?.profile) {
+      parsed.auth.profile = normalizeProfile(parsed.auth.profile);
+    }
     if (
       parsed?.auth?.profile?.enlistmentDate === '2026-09-14' ||
       parsed?.auth?.profile?.enlistmentDate === '2026-02-15' ||
@@ -112,16 +138,45 @@ function loadState() {
 
 function App() {
   const [state, setState] = useState(loadState);
+  const { clearSession, syncAuthSession } = useAuth();
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   }, [state]);
+
+  useEffect(() => {
+    if (state.auth.isAuthenticated && state.auth.profile) {
+      syncAuthSession(state.auth.profile, state.ui.activeModule || getPhase(state.auth.profile.enlistmentDate));
+    } else {
+      clearSession();
+    }
+  }, [clearSession, state.auth.isAuthenticated, state.auth.profile, state.ui.activeModule, syncAuthSession]);
 
   const updateState = (updater) => {
     setState((current) => updater(current));
   };
 
   return <AppRoutes state={state} updateState={updateState} />;
+}
+
+function ModuleHomeRoute({ module, state, updateState, phase }) {
+  useEffect(() => {
+    updateState((current) => {
+      if (current.ui.activeModule === module) {
+        return current;
+      }
+
+      return {
+        ...current,
+        ui: {
+          ...current.ui,
+          activeModule: module,
+        },
+      };
+    });
+  }, [module, updateState]);
+
+  return <HomeDashboard state={state} phase={phase} activeModule={module} />;
 }
 
 function AppRoutes({ state, updateState }) {
@@ -151,6 +206,7 @@ function AppRoutes({ state, updateState }) {
 }
 
 function AppShell({ state, updateState }) {
+  const { setCurrentModule: setAuthCurrentModule } = useAuth();
   const profile = state.auth.profile;
   const phase = getPhase(profile?.enlistmentDate);
   const activeModule = state.ui.activeModule || phase;
@@ -163,30 +219,25 @@ function AppShell({ state, updateState }) {
         activeModule: module,
       },
     }));
+    setAuthCurrentModule(module);
   };
 
   return (
     <div className={`app-frame module-${activeModule}`}>
       <div className="grain" />
       <div className="shell">
-        <div className="shell-topbar">
-          <div className="topbar-brand-block">
-            <div className="shell-brand">COVER ME</div>
-            <div className="shell-meta">One service journey. Two modules.</div>
-          </div>
-          <div className="topbar-actions">
-            <NavLink to="/home" className="topbar-link">
-              Home
-            </NavLink>
-            <ModuleToggle activeModule={activeModule} onChange={setActiveModule} />
-            <NavLink to="/profile" className="topbar-profile-link">
-              Profile
-            </NavLink>
-          </div>
-        </div>
+        <Navbar />
         <main className="screen-body">
           <Routes>
-            <Route path="/home" element={<HomeDashboard state={state} phase={phase} activeModule={activeModule} />} />
+            <Route path="/home" element={<Navigate to={`/${activeModule}`} replace />} />
+            <Route
+              path="/enlist"
+              element={<ModuleHomeRoute module="enlist" state={state} updateState={updateState} phase={phase} />}
+            />
+            <Route
+              path="/serve"
+              element={<ModuleHomeRoute module="serve" state={state} updateState={updateState} phase={phase} />}
+            />
             <Route path="/fitness-prep" element={<FitnessPrepScreen state={state} />} />
             <Route path="/ai-chat" element={<AiChatScreen />} />
             <Route path="/peer-intel" element={<PeerIntelScreen state={state} updateState={updateState} />} />
@@ -227,6 +278,7 @@ function AppShell({ state, updateState }) {
 
 function LoginScreen({ state, updateState }) {
   const navigate = useNavigate();
+  const { login } = useAuth();
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -237,13 +289,13 @@ function LoginScreen({ state, updateState }) {
 
   const handleLogin = async () => {
     setLoading(true);
-    const result = await loginWithSingPass();
+    const profile = normalizeProfile(await login());
 
     updateState((current) => ({
       ...current,
       auth: {
         isAuthenticated: true,
-        profile: result.profile,
+        profile,
       },
     }));
 
@@ -410,6 +462,7 @@ function ConsentScreen({ state, updateState }) {
 }
 
 function HomeDashboard({ state, phase, activeModule }) {
+  const navigate = useNavigate();
   const profile = state.auth.profile;
   const firstName = profile.fullName.split(' ')[1] || profile.fullName.split(' ')[0];
   const ordDate = addYears(profile.enlistmentDate, 2);
@@ -474,20 +527,19 @@ function HomeDashboard({ state, phase, activeModule }) {
         };
 
   return (
-    <section>
-      <header className="top-bar">
-        <div>
-          <p className="kicker">{moduleContent.eyebrow}</p>
-          <h1 className="welcome-title">Welcome back, {toTitleCase(firstName)}</h1>
-        </div>
-        <div className={`phase-chip ${activeModule}`}>{activeModule === 'enlist' ? 'ENLIST' : 'SERVE'}</div>
-      </header>
-
+    <PageWrapper
+      title={`Welcome back, ${toTitleCase(firstName)}`}
+      description={moduleContent.summary}
+      module={activeModule}
+    >
+      <p className="kicker">{moduleContent.eyebrow}</p>
       <div className="dashboard-hero">
-        <div className="countdown-card">
-          <div className="stat-number">{ordDays}</div>
-          <div className="stat-label">days to ORD</div>
-        </div>
+        <ORDCountdown
+          enlistmentDate={profile.enlistmentDate}
+          ordDate={ordDate}
+          value={ordDays}
+          label="DAYS TO ORD"
+        />
         <div className="secondary-stack">
           {activeModule === 'enlist' ? (
             <div className="mini-panel">
@@ -500,29 +552,21 @@ function HomeDashboard({ state, phase, activeModule }) {
               <strong>{phase === 'serve' ? `Week ${weekOfNs}` : 'Preview · Week 1'}</strong>
             </div>
           )}
-          <div className="mini-panel">
-            <span>Service profile</span>
-            <strong>
-              PES {profile.pesStatus}
-              {profile.unit ? ` · ${profile.unit}` : ''}
-            </strong>
-          </div>
         </div>
-      </div>
-
-      <div className="module-summary-card">
-        <p>{moduleContent.summary}</p>
       </div>
 
       <div className="feature-grid">
         {moduleContent.detailBlocks.map((block) => (
-          <NavLink key={block.title} to={block.to} className="feature-card feature-link-card">
-            <div className="feature-card-title">{block.title}</div>
-            <p>{block.body}</p>
-          </NavLink>
+          <FeatureCard
+            key={block.title}
+            title={block.title}
+            description={block.body}
+            eyebrow={activeModule === 'enlist' ? 'Enlist Feature' : 'Serve Feature'}
+            onClick={() => navigate(block.to)}
+          />
         ))}
       </div>
-    </section>
+    </PageWrapper>
   );
 }
 
@@ -627,8 +671,17 @@ function PeerIntelScreen({ state, updateState }) {
         subtitle="Real batch intel organised by vocation so pre-enlistees can learn from those who have already gone through it."
       />
       <FeedScreenContent
-        state={state}
-        updateState={updateState}
+        posts={state.community.intelPosts}
+        onAddPost={(post) =>
+          updateState((current) => ({
+            ...current,
+            community: {
+              ...current.community,
+              intelPosts: [post, ...current.community.intelPosts],
+            },
+          }))
+        }
+        feedType="intel"
         emptyText="Be the first to share intel for your vocation."
         composeTitle="Submit Anonymous Intel"
         composePlaceholder="Share what would have helped you to know earlier."
@@ -646,8 +699,50 @@ function PeerSupportWallScreen({ state, updateState }) {
         subtitle="Named support posts by phase and topic, with resources surfaced before anything goes live."
       />
       <FeedScreenContent
-        state={state}
-        updateState={updateState}
+        posts={state.community.wallPosts}
+        onAddPost={(post) =>
+          updateState((current) => ({
+            ...current,
+            community: {
+              ...current.community,
+              wallPosts: [post, ...current.community.wallPosts],
+            },
+          }))
+        }
+        onReply={(postId, reply) =>
+          updateState((current) => ({
+            ...current,
+            community: {
+              ...current.community,
+              wallPosts: current.community.wallPosts.map((post) =>
+                post.id === postId
+                  ? {
+                      ...post,
+                      replies: [...(post.replies || []), reply],
+                    }
+                  : post,
+              ),
+            },
+          }))
+        }
+        onVote={(postId, direction) =>
+          updateState((current) => ({
+            ...current,
+            community: {
+              ...current.community,
+              wallPosts: current.community.wallPosts.map((post) =>
+                post.id === postId
+                  ? {
+                      ...post,
+                      upvotes: post.upvotes + (direction === 'up' ? 1 : 0),
+                      downvotes: post.downvotes + (direction === 'down' ? 1 : 0),
+                    }
+                  : post,
+              ),
+            },
+          }))
+        }
+        feedType="wall"
         emptyText="Be the first to post to the wall."
         composeTitle="Submit Support Post"
         composePlaceholder="Share support, what helped, or something others in service may need to hear."
@@ -656,67 +751,73 @@ function PeerSupportWallScreen({ state, updateState }) {
   );
 }
 
-function FeedScreenContent({ state, updateState, emptyText, composeTitle, composePlaceholder, fullWidth = false }) {
-  const [filters, setFilters] = useState({ vocation: 'All', unitType: 'All', batch: 'All' });
-  const [expandedId, setExpandedId] = useState(1);
+function FeedScreenContent({
+  posts,
+  onAddPost,
+  onReply,
+  onVote,
+  feedType,
+  emptyText,
+  composeTitle,
+  composePlaceholder,
+  fullWidth = false,
+}) {
+  const [primaryFilter, setPrimaryFilter] = useState('All');
+  const [expandedId, setExpandedId] = useState(null);
   const [showCompose, setShowCompose] = useState(false);
+  const [postTitle, setPostTitle] = useState('');
   const [postDraft, setPostDraft] = useState('');
+  const [replyDrafts, setReplyDrafts] = useState({});
+  const [replyingToId, setReplyingToId] = useState(null);
+  const filterKey = feedType === 'intel' ? 'category' : 'topic';
+  const filterOptions = ['All', ...new Set(posts.map((post) => post[filterKey]).filter(Boolean))];
 
-  const filteredPosts = state.community.posts.filter((post) => {
-    return (
-      (filters.vocation === 'All' || post.vocation === filters.vocation) &&
-      (filters.unitType === 'All' || post.unitType === filters.unitType) &&
-      (filters.batch === 'All' || post.batch === filters.batch)
-    );
-  });
+  const filteredPosts = posts.filter(
+    (post) => primaryFilter === 'All' || post[filterKey] === primaryFilter,
+  );
 
   const addPost = () => {
-    if (!postDraft.trim()) return;
+    if (!postDraft.trim() || (feedType === 'wall' && !postTitle.trim())) return;
 
-    updateState((current) => ({
-      ...current,
-      community: {
-        ...current.community,
-        posts: [
-          {
-            id: Date.now(),
-            username: 'Anonymous_Fieldnote',
-            recency: 'Just now',
-            vocation: filters.vocation === 'All' ? 'General' : filters.vocation,
-            unitType: filters.unitType === 'All' ? 'General' : filters.unitType,
-            batch: filters.batch === 'All' ? '26/26' : filters.batch,
-            verified: true,
-            body: postDraft.trim(),
-          },
-          ...current.community.posts,
-        ],
-      },
-    }));
+    onAddPost({
+      id: Date.now(),
+      author: feedType === 'intel' ? 'Anonymous Fieldnote' : 'Anonymous NSF',
+      [filterKey]: primaryFilter === 'All' ? (feedType === 'intel' ? 'General' : 'General') : primaryFilter,
+      title: feedType === 'wall' ? postTitle.trim() : undefined,
+      content: postDraft.trim(),
+      createdAt: getToday().toISOString(),
+      upvotes: feedType === 'wall' ? 0 : undefined,
+      downvotes: feedType === 'wall' ? 0 : undefined,
+      replies: feedType === 'wall' ? [] : undefined,
+    });
 
+    setPostTitle('');
     setPostDraft('');
     setShowCompose(false);
+  };
+
+  const submitReply = (postId) => {
+    const draft = (replyDrafts[postId] || '').trim();
+    if (!draft || !onReply) return;
+
+    onReply(postId, {
+      id: `${postId}-${Date.now()}`,
+      author: 'Anonymous peer',
+      text: draft,
+      createdAt: getToday().toISOString(),
+    });
+
+    setReplyDrafts((current) => ({ ...current, [postId]: '' }));
+    setReplyingToId(null);
   };
 
   return (
     <>
       <div className="filter-bar">
-        <select value={filters.vocation} onChange={(event) => setFilters({ ...filters, vocation: event.target.value })}>
-          <option>All</option>
-          <option>Infantry</option>
-          <option>Signals</option>
-          <option>Medic</option>
-        </select>
-        <select value={filters.unitType} onChange={(event) => setFilters({ ...filters, unitType: event.target.value })}>
-          <option>All</option>
-          <option>Combat</option>
-          <option>Support</option>
-          <option>Service</option>
-        </select>
-        <select value={filters.batch} onChange={(event) => setFilters({ ...filters, batch: event.target.value })}>
-          <option>All</option>
-          <option>23/24</option>
-          <option>24/24</option>
-          <option>24/25</option>
+        <select value={primaryFilter} onChange={(event) => setPrimaryFilter(event.target.value)}>
+          {filterOptions.map((option) => (
+            <option key={option}>{option}</option>
+          ))}
         </select>
       </div>
 
@@ -726,22 +827,95 @@ function FeedScreenContent({ state, updateState, emptyText, composeTitle, compos
         ) : (
           filteredPosts.map((post) => {
             const expanded = post.id === expandedId;
+            const replyCount = post.replies?.length || 0;
 
             return (
               <article key={post.id} className="feed-card" onClick={() => setExpandedId(post.id)}>
                 <div className="feed-meta">
                   <div>
-                    <strong>{post.username}</strong>
-                    <span>{post.recency}</span>
+                    <strong>{post.author}</strong>
+                    <span>{shortDate((post.createdAt || getToday().toISOString()).slice(0, 10))}</span>
                   </div>
-                  {post.verified && <span className="verified-badge">Verified</span>}
+                  {feedType === 'intel' && <span className="verified-badge">Q&A</span>}
                 </div>
                 <div className="badge-row">
-                  <span className="info-badge">{post.vocation}</span>
-                  <span className="info-badge">{post.unitType}</span>
-                  <span className="info-badge">{post.batch}</span>
+                  <span className="info-badge">{post[filterKey]}</span>
                 </div>
-                <p className={expanded ? '' : 'clamped'}>{post.body}</p>
+                {feedType === 'wall' && (
+                  <h3 className="feed-card-title">{post.title || post.topic}</h3>
+                )}
+                <p className={expanded ? 'feed-card-body' : 'feed-card-body clamped'}>{post.content}</p>
+                {feedType === 'wall' && (
+                  <div className="feed-thread-meta">
+                    <button
+                      type="button"
+                      className="thread-stat thread-vote"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onVote?.(post.id, 'up');
+                      }}
+                    >
+                      ▲ {post.upvotes || 0}
+                    </button>
+                    <button
+                      type="button"
+                      className="thread-stat thread-vote"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onVote?.(post.id, 'down');
+                      }}
+                    >
+                      ▼ {post.downvotes || 0}
+                    </button>
+                    <span className="reply-count">{replyCount} {replyCount === 1 ? 'reply' : 'replies'}</span>
+                  </div>
+                )}
+                {feedType === 'wall' && expanded && (
+                  <div className="reply-thread" onClick={(event) => event.stopPropagation()}>
+                    <div className="reply-list">
+                      {(post.replies || []).length === 0 ? (
+                        <div className="empty-state">No replies yet. Be the first to respond.</div>
+                      ) : (
+                        (post.replies || []).map((reply) => (
+                          <div key={reply.id} className="reply-item">
+                            <div className="reply-meta">
+                              <strong>{reply.author}</strong>
+                              <span>{shortDate((reply.createdAt || getToday().toISOString()).slice(0, 10))}</span>
+                            </div>
+                            <p>{reply.text}</p>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                    {replyingToId === post.id ? (
+                      <div className="reply-composer">
+                        <textarea
+                          value={replyDrafts[post.id] || ''}
+                          onChange={(event) =>
+                            setReplyDrafts((current) => ({
+                              ...current,
+                              [post.id]: event.target.value,
+                            }))
+                          }
+                          placeholder="Reply with encouragement, advice, or what helped you."
+                          rows={3}
+                        />
+                        <div className="reply-actions">
+                          <button type="button" className="secondary-button reply-button" onClick={() => setReplyingToId(null)}>
+                            Cancel
+                          </button>
+                          <button type="button" className="primary-button small" onClick={() => submitReply(post.id)}>
+                            Post reply
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button type="button" className="secondary-button reply-button" onClick={() => setReplyingToId(post.id)}>
+                        Reply to thread
+                      </button>
+                    )}
+                  </div>
+                )}
               </article>
             );
           })
@@ -753,6 +927,14 @@ function FeedScreenContent({ state, updateState, emptyText, composeTitle, compos
       </button>
       {showCompose && (
         <Modal title={composeTitle} onClose={() => setShowCompose(false)}>
+          {feedType === 'wall' && (
+            <input
+              type="text"
+              value={postTitle}
+              onChange={(event) => setPostTitle(event.target.value)}
+              placeholder="Short question title"
+            />
+          )}
           <textarea
             value={postDraft}
             onChange={(event) => setPostDraft(event.target.value)}
