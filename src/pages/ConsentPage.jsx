@@ -1,42 +1,62 @@
-import { useNavigate } from 'react-router-dom';
-import PageWrapper from '../components/layout/PageWrapper';
-import { useAuth } from '../contexts/AuthContext';
+import { useState } from 'react';
+import { Navigate, useNavigate } from 'react-router-dom';
 
-export default function ConsentPage() {
+export default function ConsentPage({ state, updateState }) {
   const navigate = useNavigate();
-  const { currentModule, updateUser, user } = useAuth();
 
-  const handleConsent = () => {
-    updateUser((currentUser) => ({
-      ...currentUser,
-      consented: true,
+  if (!state.auth.isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+
+  if (state.onboarding.consented) {
+    return <Navigate to="/home" replace />;
+  }
+
+  const proceed = (agreed) => {
+    updateState((current) => ({
+      ...current,
+      onboarding: {
+        ...current.onboarding,
+        consented: true,
+        journalOptIn: agreed,
+      },
     }));
     navigate('/home');
   };
 
   return (
-    <PageWrapper
-      title="Consent"
-      description="This mock screen stores demo consent on the authenticated user in AuthContext."
-      module={currentModule}
-    >
-      <div className="stack">
-        <section className="card">
-          <div className="section-label">Data Use</div>
-          <p className="card-copy">
-            Cover Me stores demo profile, module, and app interaction data locally in memory for the prototype flow.
+    <section className="consent-screen">
+      <div className="consent-card">
+        <p className="kicker">Profile setup · Step 2 of 2</p>
+        <h1>Your journal is yours.</h1>
+        <div className="consent-copy">
+          <p>
+            Cover Me uses NLP — natural language processing — to look at the words in your journal
+            entry and estimate a private sentiment score for you over time.
           </p>
-          <div className="pill-row">
-            <span className="stat-chip">Goal: {user?.ipptGoal || 'Not set'}</span>
-            <span className="stat-chip">Consent: {user?.consented ? 'Given' : 'Pending'}</span>
-          </div>
-        </section>
-        <div className="actions-row">
-          <button type="button" className="button-primary" onClick={handleConsent}>
-            I Consent
+          <p>
+            The system does not publish your writing, send your raw text to commanders, or surface
+            your entries to peers. For normal entries, the app stores your writing and its trend
+            score only in your private journal view.
+          </p>
+          <p>
+            If language suggests immediate self-harm risk, the app does not save that entry. It only
+            interrupts the flow to show crisis support resources directly to you.
+          </p>
+          <p>
+            No commander, peer support leader, or third party ever sees your journal entries. You
+            have the right to delete your data at any time.
+          </p>
+        </div>
+        <div className="consent-actions">
+          <button className="primary-button" onClick={() => proceed(true)}>
+            I agree to enable wellness tracking
+          </button>
+          <button className="secondary-button consent-skip-button" onClick={() => proceed(false)}>
+            Skip for now
           </button>
         </div>
       </div>
-    </PageWrapper>
+    </section>
   );
 }
