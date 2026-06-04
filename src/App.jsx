@@ -14,7 +14,6 @@ import {
   Navigate,
   Route,
   Routes,
-  useSearchParams,
   useNavigate,
 } from 'react-router-dom';
 import { useAuth } from './contexts/AuthContext';
@@ -24,15 +23,21 @@ import ORDCountdown from './components/shared/ORDCountdown';
 import FeatureCard from './components/shared/FeatureCard';
 import { peerIntelPosts } from './data/mockPeerIntel';
 import { peerWallPosts } from './data/mockPeerWall';
-import { answerNsQuestion, analyzeSentiment } from './mockServices';
+import { analyzeSentiment } from './mockServices';
 import {
   buildTrainingPlan,
-  starterQuestions,
   trainingActivity,
   unitRoster,
   wellnessPrompts,
-  whatToExpect,
 } from './data';
+import LandingPage from './pages/LandingPage';
+import GoalSetupPage from './pages/GoalSetupPage';
+import ConsentPage from './pages/ConsentPage';
+import EnlistDashboardPage from './pages/EnlistDashboardPage';
+import WhatToExpectPage from './pages/WhatToExpectPage';
+import FitnessPrepPage from './pages/FitnessPrepPage';
+import AiChatPage from './pages/AiChatPage';
+import PeerIntelPage from './pages/PeerIntelPage';
 
 ChartJS.register(CategoryScale, LinearScale, LineElement, PointElement, Tooltip, Filler);
 
@@ -188,9 +193,9 @@ function AppRoutes({ state, updateState }) {
         path="/"
         element={<Navigate to={isReady ? '/home' : state.auth.isAuthenticated ? '/setup/goal' : '/login'} replace />}
       />
-      <Route path="/login" element={<LoginScreen state={state} updateState={updateState} />} />
-      <Route path="/setup/goal" element={<ProfileSetupScreen state={state} updateState={updateState} />} />
-      <Route path="/setup/consent" element={<ConsentScreen state={state} updateState={updateState} />} />
+      <Route path="/login" element={<LandingPage state={state} updateState={updateState} />} />
+      <Route path="/setup/goal" element={<GoalSetupPage state={state} updateState={updateState} />} />
+      <Route path="/setup/consent" element={<ConsentPage state={state} updateState={updateState} />} />
       <Route
         path="/*"
         element={
@@ -232,15 +237,15 @@ function AppShell({ state, updateState }) {
             <Route path="/home" element={<Navigate to={`/${activeModule}`} replace />} />
             <Route
               path="/enlist"
-              element={<ModuleHomeRoute module="enlist" state={state} updateState={updateState} phase={phase} />}
+              element={<EnlistDashboardPage state={state} updateState={updateState} phase={phase} />}
             />
             <Route
               path="/serve"
               element={<ModuleHomeRoute module="serve" state={state} updateState={updateState} phase={phase} />}
             />
-            <Route path="/fitness-prep" element={<FitnessPrepScreen state={state} />} />
-            <Route path="/ai-chat" element={<AiChatScreen />} />
-            <Route path="/peer-intel" element={<PeerIntelScreen state={state} updateState={updateState} />} />
+            <Route path="/fitness-prep" element={<FitnessPrepPage state={state} />} />
+            <Route path="/ai-chat" element={<AiChatPage />} />
+            <Route path="/peer-intel" element={<PeerIntelPage state={state} updateState={updateState} />} />
             <Route path="/peer-support" element={<PeerSupportWallScreen state={state} updateState={updateState} />} />
             <Route path="/buddy-tap" element={<BuddyTapScreen state={state} updateState={updateState} />} />
             <Route
@@ -267,7 +272,7 @@ function AppShell({ state, updateState }) {
                 />
               }
             />
-            <Route path="/what-to-expect" element={<WhatToExpectScreen />} />
+            <Route path="/what-to-expect" element={<WhatToExpectPage />} />
             <Route path="*" element={<Navigate to="/home" replace />} />
           </Routes>
         </main>
@@ -276,190 +281,8 @@ function AppShell({ state, updateState }) {
   );
 }
 
-function LoginScreen({ state, updateState }) {
-  const navigate = useNavigate();
-  const { login } = useAuth();
-  const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    if (state.auth.isAuthenticated) {
-      navigate('/setup/goal', { replace: true });
-    }
-  }, [navigate, state.auth.isAuthenticated]);
 
-  const handleLogin = async () => {
-    setLoading(true);
-    const profile = normalizeProfile(await login());
-
-    updateState((current) => ({
-      ...current,
-      auth: {
-        isAuthenticated: true,
-        profile,
-      },
-    }));
-
-    navigate('/setup/goal');
-    setLoading(false);
-  };
-
-  return (
-    <section className="auth-screen">
-      <div className="auth-hero">
-        <div className="auth-mark">COVER ME</div>
-        <p className="auth-tagline">A clearer NS journey from uncertainty to service readiness.</p>
-      </div>
-      <div className="auth-panel">
-        <p className="kicker">Secure access</p>
-        <h1>Log in with Singpass</h1>
-        <div className="rule" />
-        <p className="auth-copy">
-          Sign in once to pull your MINDEF-linked profile and enter the right module for where you
-          are in the NS journey.
-        </p>
-        <button className="singpass-button" onClick={handleLogin} disabled={loading}>
-          <span className="singpass-logo">S</span>
-          <span>{loading ? 'Connecting...' : 'Log in with Singpass'}</span>
-        </button>
-      </div>
-    </section>
-  );
-}
-
-function ProfileSetupScreen({ state, updateState }) {
-  const navigate = useNavigate();
-  const [selected, setSelected] = useState(state.onboarding.ipptGoal);
-
-  if (!state.auth.isAuthenticated) {
-    return <Navigate to="/login" replace />;
-  }
-
-  if (state.onboarding.ipptGoal && state.onboarding.consented) {
-    return <Navigate to="/home" replace />;
-  }
-
-  const options = [
-    {
-      label: 'Pass',
-      points: '51-60 points',
-      description: 'Build a stable baseline and clear the standard with confidence.',
-    },
-    {
-      label: 'Pass with Incentive',
-      points: '61-74 points',
-      description: 'Push beyond the baseline and train for stronger payouts and consistency.',
-    },
-    {
-      label: 'Silver',
-      points: '75-84 points',
-      description: 'Train above the baseline with stronger endurance and sharper event pacing.',
-    },
-    {
-      label: 'Gold',
-      points: '85+ points',
-      description: 'Train for top-tier output across strength, endurance, and pace.',
-    },
-  ];
-
-  const saveGoal = () => {
-    if (!selected) return;
-
-    updateState((current) => ({
-      ...current,
-      onboarding: {
-        ...current.onboarding,
-        ipptGoal: selected,
-      },
-    }));
-
-    navigate('/setup/consent');
-  };
-
-  return (
-    <section className="setup-screen">
-      <ScreenHeader eyebrow="Profile setup" title="What's your IPPT goal?" />
-      <div className="card-stack">
-        {options.map((option) => (
-          <button
-            key={option.label}
-            className={`selection-card ${selected === option.label ? 'selected' : ''}`}
-            onClick={() => setSelected(option.label)}
-          >
-            <div>
-              <div className="selection-title">{option.label}</div>
-              <div className="selection-subtitle">{option.points}</div>
-            </div>
-            <p>{option.description}</p>
-          </button>
-        ))}
-      </div>
-      <button className="primary-button" onClick={saveGoal} disabled={!selected}>
-        Let's go.
-      </button>
-    </section>
-  );
-}
-
-function ConsentScreen({ state, updateState }) {
-  const navigate = useNavigate();
-  const [checked, setChecked] = useState(state.onboarding.consented);
-
-  if (!state.auth.isAuthenticated) {
-    return <Navigate to="/login" replace />;
-  }
-
-  if (state.onboarding.consented) {
-    return <Navigate to="/home" replace />;
-  }
-
-  const handleContinue = () => {
-    if (!checked) return;
-
-    updateState((current) => ({
-      ...current,
-      onboarding: {
-        ...current.onboarding,
-        consented: true,
-      },
-    }));
-
-    navigate('/home');
-  };
-
-  return (
-    <section className="consent-screen">
-      <div className="consent-card">
-        <h1>Your journal is yours.</h1>
-        <div className="consent-copy">
-          <p>
-            Cover Me uses NLP, or natural language processing, to look at the words in your journal
-            entry and estimate a private sentiment score for you over time.
-          </p>
-          <p>
-            The system does not publish your writing, send your raw text to commanders, or surface
-            your entries to peers. For normal entries, the app stores your writing and its trend
-            score only in your private journal view so you can look back on patterns over time.
-          </p>
-          <p>
-            If language suggests immediate self-harm risk, the app does not save that entry. It
-            only interrupts the flow to show crisis support resources directly to you.
-          </p>
-          <p>
-            No commander, peer support leader, or third party ever sees your journal entries
-            through this wellness feature.
-          </p>
-        </div>
-        <label className="checkbox-row">
-          <input type="checkbox" checked={checked} onChange={(event) => setChecked(event.target.checked)} />
-          <span>I understand and want to enable wellness tracking</span>
-        </label>
-        <button className="primary-button" onClick={handleContinue} disabled={!checked}>
-          Continue
-        </button>
-      </div>
-    </section>
-  );
-}
 
 function HomeDashboard({ state, phase, activeModule }) {
   const navigate = useNavigate();
@@ -570,126 +393,16 @@ function HomeDashboard({ state, phase, activeModule }) {
   );
 }
 
-function FitnessPrepScreen({ state }) {
-  const profile = state.auth.profile;
-  const attempts = state.ippt.attempts;
-  const pbs = getPbs(attempts);
-  const currentScore = calculateIpptScore(pbs.pushups, pbs.situps, pbs.runSeconds).score;
-  const plan = useMemo(
-    () => buildTrainingPlan(profile.pesStatus, state.onboarding.ipptGoal, currentScore, profile.vocation),
-    [currentScore, profile.pesStatus, profile.vocation, state.onboarding.ipptGoal],
-  );
 
-  return (
-    <section>
-      <ScreenHeader title="Your Pre-Enlistment Workout Plan" subtitle={plan.summary} />
-      <div className="badge-row">
-        <span className="info-badge">PES {profile.pesStatus}</span>
-        <span className="info-badge">{profile.vocation}</span>
-        <span className="info-badge">{state.onboarding.ipptGoal}</span>
-      </div>
-      <div className="horizontal-days">
-        {plan.days.map((day) => (
-          <article key={day.id} className="day-card">
-            <div className="day-card-header">
-              <span>{day.label}</span>
-              <strong>{day.duration}</strong>
-            </div>
-            <p>{day.workout}</p>
-          </article>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function AiChatScreen({ embedded = false }) {
-  const [messages, setMessages] = useState([]);
-  const [input, setInput] = useState('');
-
-  const sendMessage = (question) => {
-    const prompt = question.trim();
-    if (!prompt) return;
-
-    const reply = answerNsQuestion(prompt);
-    setMessages((current) => [...current, { role: 'user', text: prompt }, { role: 'assistant', text: reply }]);
-    setInput('');
-  };
-
-  return (
-    <section className={`chat-screen ${embedded ? 'embedded-chat-screen' : ''}`}>
-      {!embedded && (
-        <ScreenHeader
-          title="Ask Anything"
-          subtitle="Ask me anything about NS. I only answer from verified SAF sources. I'll tell you when I don't know."
-        />
-      )}
-      {embedded && <p className="embedded-chat-intro">Ask about BMT, admin steps, packing, medical review, or NS terms.</p>}
-      {messages.length === 0 && (
-        <div className="chip-row">
-          {starterQuestions.map((question) => (
-            <button key={question} className="chip" onClick={() => sendMessage(question)}>
-              {question}
-            </button>
-          ))}
-        </div>
-      )}
-      <div className="chat-log">
-        {messages.map((message, index) => (
-          <div key={`${message.role}-${index}`} className={`message-row ${message.role}`}>
-            <div className={`message-bubble ${message.role}`}>{message.text}</div>
-          </div>
-        ))}
-      </div>
-      <div className="chat-input-bar">
-        <input
-          value={input}
-          onChange={(event) => setInput(event.target.value)}
-          placeholder="Ask about enlistment, admin, training, or medical processes"
-        />
-        <button className="primary-button small" onClick={() => sendMessage(input)}>
-          Send
-        </button>
-      </div>
-    </section>
-  );
-}
 
 function CommunityScreen({ state, updateState, activeModule }) {
   return activeModule === 'enlist' ? (
-    <PeerIntelScreen state={state} updateState={updateState} />
+    <PeerIntelPage state={state} updateState={updateState} />
   ) : (
     <PeerSupportWallScreen state={state} updateState={updateState} />
   );
 }
 
-function PeerIntelScreen({ state, updateState }) {
-  return (
-    <section className="feed-screen">
-      <ScreenHeader
-        title="Batch Advice Feed"
-        subtitle="Real batch intel organised by vocation so pre-enlistees can learn from those who have already gone through it."
-      />
-      <FeedScreenContent
-        posts={state.community.intelPosts}
-        onAddPost={(post) =>
-          updateState((current) => ({
-            ...current,
-            community: {
-              ...current.community,
-              intelPosts: [post, ...current.community.intelPosts],
-            },
-          }))
-        }
-        feedType="intel"
-        emptyText="Be the first to share intel for your vocation."
-        composeTitle="Submit Anonymous Intel"
-        composePlaceholder="Share what would have helped you to know earlier."
-        fullWidth
-      />
-    </section>
-  );
-}
 
 function PeerSupportWallScreen({ state, updateState }) {
   return (
@@ -1597,20 +1310,6 @@ function JournalScreen({ state, updateState, activeModule }) {
   );
 }
 
-function WhatToExpectScreen() {
-  return (
-    <section>
-      <ScreenHeader title="What to Expect" subtitle="A structured first-day overview for enlistment." />
-      <div className="info-list">
-        {whatToExpect.map((item) => (
-          <article key={item} className="info-panel">
-            {item}
-          </article>
-        ))}
-      </div>
-    </section>
-  );
-}
 
 function ProfileScreen({ state, updateState, phase, activeModule }) {
   const profile = state.auth.profile;

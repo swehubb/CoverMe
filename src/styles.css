@@ -1915,3 +1915,255 @@ textarea::placeholder {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+/* ── Enlist Dashboard ──────────────────────────────────────── */
+.enlist-dash-summary {
+  margin: 0 0 18px;
+  color: var(--text-secondary);
+  line-height: 1.55;
+}
+
+/* ── Consent Page ──────────────────────────────────────────── */
+.consent-actions {
+  display: grid;
+  gap: 10px;
+  margin-top: 24px;
+}
+
+.consent-skip-button {
+  margin-top: 0;
+}
+
+/* ── What to Expect Page ────────────────────────────────────── */
+.expect-tab-bar {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  margin-bottom: 20px;
+}
+
+.expect-tab {
+  white-space: nowrap;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  background: var(--surface-primary);
+  color: var(--text-primary);
+  font-size: 0.88rem;
+  transition: border-color 0.18s ease, background-color 0.18s ease;
+}
+
+.expect-tab.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #f8f5ee;
+}
+
+.expect-section-label {
+  font-family: var(--font-heading);
+  font-size: 1.6rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  font-weight: 400;
+  margin-bottom: 14px;
+}
+
+.expect-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.expect-card {
+  padding: 18px;
+  border: 1px solid var(--border);
+  background: var(--surface-primary);
+}
+
+.expect-card-title {
+  margin: 0 0 8px;
+  font-family: var(--font-body);
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--color-accent);
+}
+
+.expect-card-detail {
+  margin: 0;
+  line-height: 1.6;
+  color: var(--text-primary);
+}
+
+/* ── Fitness Prep Page ──────────────────────────────────────── */
+.prep-week-grid {
+  display: grid;
+  gap: 14px;
+  margin: 20px 0;
+}
+
+.prep-day-card {
+  border: 1px solid var(--border);
+  background: var(--surface-primary);
+  overflow: hidden;
+}
+
+.prep-day-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  background: var(--surface-accent);
+  border-bottom: 1px solid var(--border);
+}
+
+.prep-day-name {
+  font-family: var(--font-heading);
+  font-size: 1.2rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-weight: 400;
+}
+
+.prep-day-focus {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-top: 2px;
+}
+
+.prep-exercise-list {
+  display: grid;
+  gap: 0;
+}
+
+.prep-exercise-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 11px 16px;
+  border-top: 1px solid var(--border);
+}
+
+.prep-exercise-info {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.prep-exercise-name {
+  font-size: 0.92rem;
+  font-weight: 500;
+}
+
+.prep-exercise-detail {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+}
+
+.prep-component-badge {
+  white-space: nowrap;
+  padding: 4px 8px;
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  border: 1px solid var(--border);
+  font-family: var(--font-mono);
+}
+
+.component-pushUps { background: #f0e4d4; border-color: #d4b896; }
+.component-sitUps  { background: #dce8dc; border-color: #a8c8a8; }
+.component-run     { background: #d8e4f0; border-color: #96b4d0; }
+.component-core    { background: #ede0f4; border-color: #c4a0d8; }
+.component-recovery{ background: var(--surface-accent); }
+
+.prep-note-card {
+  padding: 16px;
+  border: 1px solid var(--border);
+  background: var(--surface-accent);
+  margin-top: 8px;
+}
+
+.prep-note-card p {
+  margin: 4px 0 0;
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+}
+
+/* ── AI Chat Page ───────────────────────────────────────────── */
+.chat-source-note {
+  font-size: 0.84rem;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.message-source {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(20, 33, 29, 0.1);
+  font-size: 0.78rem;
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
+  letter-spacing: 0.04em;
+}
+
+.message-source.fallback {
+  color: #9a6a2a;
+}
+
+/* ── Peer Intel Page ────────────────────────────────────────── */
+.intel-filter-bar {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.intel-filter-bar select {
+  flex: 1;
+  min-width: 120px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  background: var(--surface-primary);
+  color: var(--text-primary);
+  appearance: none;
+  font-size: 0.88rem;
+}
+
+.intel-modal-note {
+  font-size: 0.86rem;
+  color: var(--text-secondary);
+  margin: 0 0 12px;
+}
+
+.mod-warning {
+  margin: 8px 0 0;
+  padding: 10px 12px;
+  border: 1px solid #c0392b;
+  background: #fdf0ef;
+  color: #c0392b;
+  font-size: 0.86rem;
+}
+
+.distress-resources {
+  margin: 10px 0 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface-accent);
+  font-size: 0.86rem;
+}
+
+.distress-resources p { margin: 0 0 8px; }
+.distress-resources ul { margin: 0; padding-left: 18px; }
+.distress-resources li { margin-bottom: 4px; }
+
+@media (min-width: 680px) {
+  .expect-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .prep-week-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
