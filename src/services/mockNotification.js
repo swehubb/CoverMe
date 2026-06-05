@@ -61,4 +61,37 @@ export const buddyTapNotification = {
   footer: "No one has been identified. No superior has been notified. This message was triggered by people who care.",
 };
 
-export default { escalationOptions, crisisResources, buddyTapNotification };
+// notify(type, payload) -> ready-to-render modal content.
+// Reuses the constants above so copy stays consistent across screens.
+export function notify(type, payload = {}) {
+  switch (type) {
+    case "buddy_threshold": {
+      const name = payload.recipientName ? `${payload.recipientName} ` : "";
+      return {
+        title: buddyTapNotification.title,
+        message: `${name}has been tapped by three people who care. An anonymous message of support has been sent directly to them.`,
+        body: buddyTapNotification.message,
+        resources: buddyTapNotification.resources,
+        footer: buddyTapNotification.footer,
+      };
+    }
+    case "escalation_nudge": {
+      const days = payload.trendDays || 5;
+      return {
+        title: "A gentle check-in",
+        message: `Your private trend has been lower for ${days} day${days === 1 ? "" : "s"}. Nothing has been shared with anyone — you decide what happens next.`,
+        cta: "See your options",
+      };
+    }
+    case "crisis_resources":
+    default:
+      return {
+        title: crisisResources.title,
+        message: crisisResources.message,
+        resources: crisisResources.resources.map((r) => ({ name: r.name, contact: r.number })),
+        disclaimer: crisisResources.disclaimer,
+      };
+  }
+}
+
+export default { escalationOptions, crisisResources, buddyTapNotification, notify };

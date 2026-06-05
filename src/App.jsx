@@ -15,6 +15,7 @@ import {
   Route,
   Routes,
   useNavigate,
+  useSearchParams,
 } from 'react-router-dom';
 import { useAuth } from './contexts/AuthContext';
 import Navbar from './components/layout/Navbar';
@@ -22,12 +23,13 @@ import PageWrapper from './components/layout/PageWrapper';
 import ORDCountdown from './components/shared/ORDCountdown';
 import FeatureCard from './components/shared/FeatureCard';
 import { peerIntelPosts } from './data/mockPeerIntel';
-import { peerWallPosts } from './data/mockPeerWall';
-import { analyzeSentiment } from './mockServices';
+import { peerWallPosts, wallPhases, wallTopics } from './data/mockPeerWall';
+import { buddyTapSelectableMembers } from './data/mockPlatoon';
+import nlpService from './services/nlpService';
+import { notify, crisisResources } from './services/mockNotification';
 import {
   buildTrainingPlan,
   trainingActivity,
-  unitRoster,
   wellnessPrompts,
 } from './data';
 import LandingPage from './pages/LandingPage';
@@ -61,25 +63,26 @@ const defaultState = {
   },
   journal: {
     entries: [
-      { date: '2026-05-07', prompt: 'How are you ending today?', text: 'Tired but steady.', score: 0.71 },
-      { date: '2026-05-08', prompt: 'How are you ending today?', text: 'A bit flat after training.', score: 0.64 },
-      { date: '2026-05-09', prompt: 'How are you ending today?', text: 'Managed the day well.', score: 0.7 },
-      { date: '2026-05-10', prompt: 'How are you ending today?', text: 'Energy was lower today.', score: 0.61 },
-      { date: '2026-05-11', prompt: 'How are you ending today?', text: 'Felt stretched thin.', score: 0.58 },
-      { date: '2026-05-12', prompt: 'How are you ending today?', text: 'Still okay, just worn out.', score: 0.55 },
-      { date: '2026-05-13', prompt: 'How are you ending today?', text: 'Harder to switch off tonight.', score: 0.5 },
-      { date: '2026-05-14', prompt: 'How are you ending today?', text: 'A little better after talking.', score: 0.57 },
-      { date: '2026-05-15', prompt: 'How are you ending today?', text: 'Steadier day overall.', score: 0.62 },
-      { date: '2026-05-16', prompt: 'How are you ending today?', text: 'Routine helped.', score: 0.66 },
-      { date: '2026-05-17', prompt: 'How are you ending today?', text: 'Good pace today.', score: 0.69 },
-      { date: '2026-05-18', prompt: 'How are you ending today?', text: 'Mentally clearer.', score: 0.72 },
-      { date: '2026-05-19', prompt: 'How are you ending today?', text: 'Not perfect, but stable.', score: 0.74 },
+      seedEntry('2026-05-07', 'How are you ending today?', 'Tired but steady.', 0.71),
+      seedEntry('2026-05-08', 'How are you ending today?', 'A bit flat after training.', 0.64),
+      seedEntry('2026-05-09', 'How are you ending today?', 'Managed the day well.', 0.7),
+      seedEntry('2026-05-10', 'How are you ending today?', 'Energy was lower today.', 0.61),
+      seedEntry('2026-05-11', 'How are you ending today?', 'Felt stretched thin.', 0.58),
+      seedEntry('2026-05-12', 'How are you ending today?', 'Still okay, just worn out.', 0.55),
+      seedEntry('2026-05-13', 'How are you ending today?', 'Harder to switch off tonight.', 0.5),
+      seedEntry('2026-05-14', 'How are you ending today?', 'A little better after talking.', 0.57),
+      seedEntry('2026-05-15', 'How are you ending today?', 'Steadier day overall.', 0.62),
+      seedEntry('2026-05-16', 'How are you ending today?', 'Routine helped.', 0.66),
+      seedEntry('2026-05-17', 'How are you ending today?', 'Good pace today.', 0.69),
+      seedEntry('2026-05-18', 'How are you ending today?', 'Mentally clearer.', 0.72),
+      seedEntry('2026-05-19', 'How are you ending today?', 'Not perfect, but stable.', 0.74),
     ],
   },
   community: {
     intelPosts: peerIntelPosts,
     wallPosts: peerWallPosts,
     concerns: [],
+    buddyTaps: [],
   },
   social: {
     trainingFeed: trainingActivity,
@@ -248,6 +251,7 @@ function AppShell({ state, updateState }) {
             <Route path="/peer-intel" element={<PeerIntelPage state={state} updateState={updateState} />} />
             <Route path="/peer-support" element={<PeerSupportWallScreen state={state} updateState={updateState} />} />
             <Route path="/buddy-tap" element={<BuddyTapScreen state={state} updateState={updateState} />} />
+            <Route path="/escalation" element={<EscalationScreen state={state} />} />
             <Route
               path="/community"
               element={<CommunityScreen state={state} updateState={updateState} activeModule={activeModule} />}
@@ -345,6 +349,11 @@ function HomeDashboard({ state, phase, activeModule }) {
               title: 'Peer Support Wall',
               body: 'Named support posts by phase and topic, with resources surfaced before anything goes live.',
               to: '/peer-support',
+            },
+            {
+              title: 'Support Options',
+              body: 'User-controlled escalation: AI companion, peer support leader, or SAF counselling. You decide, every time.',
+              to: '/escalation',
             },
           ],
         };
@@ -456,6 +465,7 @@ function PeerSupportWallScreen({ state, updateState }) {
           }))
         }
         feedType="wall"
+        moderate={nlpService.moderate}
         emptyText="Be the first to post to the wall."
         composeTitle="Submit Support Post"
         composePlaceholder="Share support, what helped, or something others in service may need to hear."
@@ -470,43 +480,98 @@ function FeedScreenContent({
   onReply,
   onVote,
   feedType,
+  moderate,
   emptyText,
   composeTitle,
   composePlaceholder,
   fullWidth = false,
 }) {
+  const isWall = feedType === 'wall';
   const [primaryFilter, setPrimaryFilter] = useState('All');
   const [expandedId, setExpandedId] = useState(null);
   const [showCompose, setShowCompose] = useState(false);
   const [postTitle, setPostTitle] = useState('');
   const [postDraft, setPostDraft] = useState('');
+  const [postPhase, setPostPhase] = useState(wallPhases[1].value);
+  const [postTopic, setPostTopic] = useState(wallTopics[0]);
+  const [composeError, setComposeError] = useState('');
+  const [distressPrompt, setDistressPrompt] = useState(false);
+  const [posting, setPosting] = useState(false);
   const [replyDrafts, setReplyDrafts] = useState({});
   const [replyingToId, setReplyingToId] = useState(null);
-  const filterKey = feedType === 'intel' ? 'category' : 'topic';
-  const filterOptions = ['All', ...new Set(posts.map((post) => post[filterKey]).filter(Boolean))];
+
+  const filterKey = feedType === 'intel' ? 'category' : isWall ? 'phase' : 'topic';
+  const filterOptions = isWall
+    ? [{ value: 'All', label: 'All' }, ...wallPhases]
+    : ['All', ...new Set(posts.map((post) => post[filterKey]).filter(Boolean))].map((value) => ({
+        value,
+        label: value,
+      }));
+  const phaseLabel = (value) => wallPhases.find((p) => p.value === value)?.label || value;
 
   const filteredPosts = posts.filter(
     (post) => primaryFilter === 'All' || post[filterKey] === primaryFilter,
   );
 
-  const addPost = () => {
-    if (!postDraft.trim() || (feedType === 'wall' && !postTitle.trim())) return;
-
-    onAddPost({
-      id: Date.now(),
-      author: feedType === 'intel' ? 'Anonymous Fieldnote' : 'Anonymous NSF',
-      [filterKey]: primaryFilter === 'All' ? (feedType === 'intel' ? 'General' : 'General') : primaryFilter,
-      title: feedType === 'wall' ? postTitle.trim() : undefined,
-      content: postDraft.trim(),
-      createdAt: getToday().toISOString(),
-      upvotes: feedType === 'wall' ? 0 : undefined,
-      downvotes: feedType === 'wall' ? 0 : undefined,
-      replies: feedType === 'wall' ? [] : undefined,
-    });
-
+  const resetCompose = () => {
     setPostTitle('');
     setPostDraft('');
+    setComposeError('');
+    setDistressPrompt(false);
     setShowCompose(false);
+  };
+
+  const publishWallPost = (distressFlag) => {
+    onAddPost({
+      id: Date.now(),
+      author: 'Anonymous NSF',
+      phase: postPhase,
+      topic: postTopic,
+      title: postTitle.trim() || undefined,
+      content: postDraft.trim(),
+      createdAt: getToday().toISOString(),
+      distressFlag,
+      upvotes: 0,
+      downvotes: 0,
+      replies: [],
+    });
+    resetCompose();
+  };
+
+  const addPost = async () => {
+    if (!postDraft.trim()) return;
+
+    // Intel feed: no moderation, original behaviour.
+    if (!isWall) {
+      onAddPost({
+        id: Date.now(),
+        author: 'Anonymous Fieldnote',
+        [filterKey]: primaryFilter === 'All' ? 'General' : primaryFilter,
+        content: postDraft.trim(),
+        createdAt: getToday().toISOString(),
+      });
+      resetCompose();
+      return;
+    }
+
+    // Wall feed: run moderation before anything goes live.
+    setPosting(true);
+    setComposeError('');
+    const verdict = moderate ? await moderate(postDraft.trim()) : { approved: true, distress: false, reason: '' };
+    setPosting(false);
+
+    if (!verdict.approved) {
+      setComposeError(verdict.reason || 'This post was flagged. Please rephrase to keep this a supportive space.');
+      return;
+    }
+
+    if (verdict.distress && !distressPrompt) {
+      // Surface resources before publishing; the writer can still choose to post.
+      setDistressPrompt(true);
+      return;
+    }
+
+    publishWallPost(Boolean(verdict.distress) || distressPrompt);
   };
 
   const submitReply = (postId) => {
@@ -529,7 +594,9 @@ function FeedScreenContent({
       <div className="filter-bar">
         <select value={primaryFilter} onChange={(event) => setPrimaryFilter(event.target.value)}>
           {filterOptions.map((option) => (
-            <option key={option}>{option}</option>
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
           ))}
         </select>
       </div>
@@ -552,7 +619,11 @@ function FeedScreenContent({
                   {feedType === 'intel' && <span className="verified-badge">Q&A</span>}
                 </div>
                 <div className="badge-row">
-                  <span className="info-badge">{post[filterKey]}</span>
+                  <span className="info-badge">{isWall ? phaseLabel(post.phase) : post[filterKey]}</span>
+                  {isWall && post.topic && <span className="info-badge">{post.topic}</span>}
+                  {isWall && post.distressFlag && (
+                    <span className="info-badge distress-badge">Support surfaced</span>
+                  )}
                 </div>
                 {feedType === 'wall' && (
                   <h3 className="feed-card-title">{post.title || post.topic}</h3>
@@ -639,24 +710,76 @@ function FeedScreenContent({
         +
       </button>
       {showCompose && (
-        <Modal title={composeTitle} onClose={() => setShowCompose(false)}>
-          {feedType === 'wall' && (
+        <Modal title={composeTitle} onClose={resetCompose}>
+          {isWall && (
+            <div className="compose-selectors">
+              <label>
+                <span>Phase</span>
+                <select value={postPhase} onChange={(event) => setPostPhase(event.target.value)}>
+                  {wallPhases.map((phase) => (
+                    <option key={phase.value} value={phase.value}>
+                      {phase.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span>Topic</span>
+                <select value={postTopic} onChange={(event) => setPostTopic(event.target.value)}>
+                  {wallTopics.map((topic) => (
+                    <option key={topic} value={topic}>
+                      {topic}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          )}
+          {isWall && (
             <input
               type="text"
               value={postTitle}
               onChange={(event) => setPostTitle(event.target.value)}
-              placeholder="Short question title"
+              placeholder="Short title (optional)"
             />
           )}
           <textarea
             value={postDraft}
-            onChange={(event) => setPostDraft(event.target.value)}
+            onChange={(event) => {
+              setPostDraft(event.target.value);
+              if (composeError) setComposeError('');
+            }}
             placeholder={composePlaceholder}
             rows={6}
           />
-          <button className="primary-button" onClick={addPost}>
-            Submit to moderation queue
-          </button>
+          {composeError && <p className="inline-warning">{composeError}</p>}
+          {distressPrompt ? (
+            <div className="distress-banner">
+              <strong>You don't have to carry this alone.</strong>
+              <p>
+                It sounds like things are heavy right now. You can still post — and these are here for you, only you:
+              </p>
+              <ul className="resource-list">
+                {crisisResources.resources.slice(0, 3).map((resource) => (
+                  <li key={resource.name}>
+                    {resource.name}: {resource.number}
+                  </li>
+                ))}
+              </ul>
+              <div className="action-grid">
+                <button className="primary-button small" onClick={addPost} disabled={posting}>
+                  Post anyway
+                </button>
+                <button className="soft-button" onClick={resetCompose}>
+                  Maybe later
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button className="primary-button" onClick={addPost} disabled={posting}>
+              {posting ? 'Checking…' : 'Submit to moderation queue'}
+            </button>
+          )}
         </Modal>
       )}
     </>
@@ -664,22 +787,59 @@ function FeedScreenContent({
 }
 
 function BuddyTapScreen({ state, updateState }) {
-  const [buddyName, setBuddyName] = useState(unitRoster[0]);
+  const [buddyId, setBuddyId] = useState(buddyTapSelectableMembers[0].id);
   const [buddyComment, setBuddyComment] = useState('');
   const [submittedConcern, setSubmittedConcern] = useState(false);
+  const [checking, setChecking] = useState(false);
+  const [blockReason, setBlockReason] = useState('');
+  const [thresholdNotice, setThresholdNotice] = useState(null);
 
-  const submitConcern = () => {
+  const taps = state.community.buddyTaps || [];
+  const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  const weeklyCount = taps.filter((tap) => new Date(tap.timestamp).getTime() >= weekAgo).length;
+
+  const submitConcern = async () => {
+    if (!buddyComment.trim()) {
+      setBlockReason('Add a short note on what you noticed so the support message feels grounded.');
+      return;
+    }
+    setChecking(true);
+    setBlockReason('');
+
+    const verdict = await nlpService.moderate(buddyComment.trim());
+    setChecking(false);
+
+    if (!verdict.approved) {
+      setBlockReason(verdict.reason || 'This note was flagged. Buddy Tap is for sincere welfare concerns only.');
+      return;
+    }
+
+    const member = buddyTapSelectableMembers.find((m) => m.id === buddyId);
+    const priorCount = taps.filter((tap) => tap.toUserId === buddyId).length;
+    const newCount = priorCount + 1;
+
     updateState((current) => ({
       ...current,
       community: {
         ...current.community,
-        concerns: [
-          ...current.community.concerns,
-          { name: buddyName, comment: buddyComment.trim(), date: getToday().toISOString() },
+        buddyTaps: [
+          ...(current.community.buddyTaps || []),
+          { id: Date.now(), toUserId: buddyId, text: buddyComment.trim(), timestamp: new Date().toISOString() },
         ],
       },
     }));
+
     setSubmittedConcern(true);
+
+    if (newCount >= 3) {
+      setThresholdNotice(notify('buddy_threshold', { recipientName: member?.name }));
+    }
+  };
+
+  const reset = () => {
+    setSubmittedConcern(false);
+    setBuddyComment('');
+    setBlockReason('');
   };
 
   return (
@@ -688,36 +848,63 @@ function BuddyTapScreen({ state, updateState }) {
         title="Buddy Tap"
         subtitle="Anonymous single-action concern flag. Three independent taps trigger a supportive message directly to the person."
       />
+      <div className="badge-row">
+        <span className="info-badge">Taps this week: {weeklyCount}</span>
+        <span className="info-badge">No commander is notified. No one is identified.</span>
+      </div>
       <div className="buddy-card">
         <h2>Cover a mate.</h2>
         <p>If someone seems off, let us know. Three independent reports send them an anonymous message of support. No names. No commanders.</p>
         {!submittedConcern ? (
           <>
-            <select value={buddyName} onChange={(event) => setBuddyName(event.target.value)}>
-              {unitRoster.map((name) => (
-                <option key={name}>{name}</option>
+            <select value={buddyId} onChange={(event) => setBuddyId(event.target.value)}>
+              {buddyTapSelectableMembers.map((member) => (
+                <option key={member.id} value={member.id}>
+                  {member.rank} {member.name}
+                </option>
               ))}
             </select>
             <textarea
+              className="rose-input"
               value={buddyComment}
               onChange={(event) => setBuddyComment(event.target.value)}
-              placeholder="What did you notice? Add brief context so the support message can feel more grounded. Optional."
+              placeholder="What did you notice? Add brief context so the support message can feel more grounded."
               rows={4}
             />
-            <button className="primary-button" onClick={submitConcern}>
-              Send concern
+            {blockReason && <p className="inline-warning">{blockReason}</p>}
+            <button className="primary-button" onClick={submitConcern} disabled={checking}>
+              {checking ? 'Checking…' : 'Send concern'}
             </button>
           </>
         ) : (
           <div className="confirmation-card">
             <div className="checkmark">✓</div>
             <p>Noted. Your concern was recorded anonymously.</p>
+            <button className="soft-button" onClick={reset}>
+              Tap for someone else
+            </button>
           </div>
         )}
         <small>
           Three independent reports about the same person triggers an anonymous message sent directly to them: "Some people in your unit are thinking about you. Here are some resources." No one is identified. No superior is notified.
         </small>
       </div>
+
+      {thresholdNotice && (
+        <Modal title={thresholdNotice.title} onClose={() => setThresholdNotice(null)}>
+          <p>{thresholdNotice.message}</p>
+          <p>{thresholdNotice.body}</p>
+          <ul className="resource-list">
+            {thresholdNotice.resources.map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
+          <small>{thresholdNotice.footer}</small>
+          <button className="primary-button" onClick={() => setThresholdNotice(null)}>
+            Close
+          </button>
+        </Modal>
+      )}
     </section>
   );
 }
@@ -1108,48 +1295,79 @@ function WeekendPlannerScreen({ state, activeModule }) {
   );
 }
 
-function JournalScreen({ state, updateState, activeModule }) {
+function JournalScreen({ state, updateState }) {
+  const navigate = useNavigate();
   const [entry, setEntry] = useState('');
   const [saving, setSaving] = useState(false);
   const [crisisState, setCrisisState] = useState(false);
   const [dismissedDip, setDismissedDip] = useState(false);
   const prompt = wellnessPrompts[getToday().getDate() % wellnessPrompts.length];
   const entries = state.journal.entries.slice(-14);
-  const reviewEntries = [...entries].reverse();
+  const reviewEntries = [...state.journal.entries].slice(-5).reverse();
   const streakDays = getJournalStreak(state.journal.entries);
   const dipState = isTrendDeclining(entries);
+
+  // PDPA gate — consent is enforced upstream, but Sentinel refuses to run without it.
+  if (!state.onboarding.consented) {
+    return (
+      <section>
+        <ScreenHeader
+          title="Sentinel"
+          subtitle="Private reflection with NLP used only to estimate your own emotional trend."
+        />
+        <div className="alert-card">
+          <h2>Consent needed</h2>
+          <p>
+            Sentinel only runs after you've reviewed and accepted the PDPA consent for private journaling.
+            Your reflections are stored on your device and never shared with commanders.
+          </p>
+          <button className="primary-button" onClick={() => navigate('/setup/consent')}>
+            Review consent
+          </button>
+        </div>
+      </section>
+    );
+  }
 
   const submitEntry = async () => {
     if (!entry.trim()) return;
     setSaving(true);
 
-    const result = await analyzeSentiment(entry);
+    const result = await nlpService.analyze(entry.trim());
 
-    if (result.isCrisis) {
+    if (result.crisis) {
+      // Crisis: surface resources to the user, do NOT save the entry, notify no one.
       setCrisisState(true);
       setSaving(false);
       return;
     }
 
     updateState((current) => ({
-          ...current,
-          journal: {
-            entries: [
-              ...current.journal.entries,
-              { date: isoDate(getToday()), prompt, text: entry.trim(), score: result.score },
-            ],
+      ...current,
+      journal: {
+        ...current.journal,
+        entries: [
+          ...current.journal.entries,
+          {
+            id: Date.now(),
+            timestamp: new Date().toISOString(),
+            text: entry.trim(),
+            sentiment: result,
+            prompt,
           },
-        }));
+        ],
+      },
+    }));
 
     setEntry('');
     setSaving(false);
   };
 
   const chartData = {
-    labels: entries.map((item) => shortDate(item.date)),
+    labels: entries.map((item) => shortDate(entryDay(item))),
     datasets: [
       {
-        data: entries.map((item) => item.score),
+        data: entries.map((item) => entryScore(item)),
         borderColor: '#4A7C59',
         backgroundColor: 'rgba(74, 124, 89, 0.12)',
         tension: 0.35,
@@ -1177,20 +1395,26 @@ function JournalScreen({ state, updateState, activeModule }) {
             rows={7}
           />
           <button className="primary-button" onClick={submitEntry} disabled={saving}>
-            {saving ? 'Processing...' : 'Submit'}
+            {saving ? 'Reflecting…' : 'Submit'}
           </button>
         </div>
         <div className="chart-card">
           <div className="chart-caption">Your emotional trend - only you can see this.</div>
           <Line options={chartOptions({ yLabel: false, yTicks: false, min: 0.2, max: 0.95 })} data={chartData} />
           {dipState && !dismissedDip && (
-            <div className="action-grid">
-              <button className="soft-button">Chat with AI journaling companion</button>
-              <button className="soft-button">Connect anonymously with peer support leader</button>
-              <button className="soft-button">SAF counselling resources</button>
-              <button className="soft-button" onClick={() => setDismissedDip(true)}>
-                I'm okay, dismiss
-              </button>
+            <div className="trend-banner">
+              <div>
+                <strong>Your private trend has been low for a few days.</strong>
+                <p>Nothing has been shared with anyone. You decide what happens next.</p>
+              </div>
+              <div className="trend-banner-actions">
+                <button className="primary-button small" onClick={() => navigate('/escalation')}>
+                  See your options
+                </button>
+                <button className="soft-button" onClick={() => setDismissedDip(true)}>
+                  I'm okay, dismiss
+                </button>
+              </div>
             </div>
           )}
         </div>
@@ -1275,12 +1499,14 @@ function JournalScreen({ state, updateState, activeModule }) {
         </div>
         <div className="journal-review-list">
           {reviewEntries.map((item, index) => (
-            <article key={`${item.date}-${index}`} className="journal-review-item">
+            <article key={item.id ?? `${entryDay(item)}-${index}`} className="journal-review-item">
               <div className="journal-review-topline">
-                <strong>{shortDate(item.date)}</strong>
-                <span>{item.prompt}</span>
+                <strong>{shortDate(entryDay(item))}</strong>
+                <span className={`sentiment-chip sentiment-${item.sentiment?.dominant || dominantFromScore(entryScore(item))}`}>
+                  {item.sentiment?.dominant || dominantFromScore(entryScore(item))}
+                </span>
               </div>
-              <p>{item.text}</p>
+              <p>{item.text.length > 80 ? `${item.text.slice(0, 80)}…` : item.text}</p>
             </article>
           ))}
         </div>
@@ -1289,20 +1515,27 @@ function JournalScreen({ state, updateState, activeModule }) {
       {crisisState && (
         <div className="overlay-alert">
           <div className="alert-card">
-            <h2>Immediate support resources</h2>
+            <h2>{crisisResources.title}</h2>
+            <p>{crisisResources.message}</p>
             <p>
-              Your entry was not saved. If you are in immediate danger or feel at risk, reach out now. These resources are
-              shown only to you. No commander or superior is notified.
+              Your entry was not saved. These resources are shown only to you — no commander or superior is notified.
             </p>
             <ul className="resource-list">
-              <li>SAF Counselling Centre</li>
-              <li>Direct SAF counsellor contact pathway</li>
-              <li>IMH Mental Health Helpline: 6389 2222</li>
-              <li>Samaritans of Singapore: 1767</li>
+              {crisisResources.resources.map((resource) => (
+                <li key={resource.name}>
+                  <strong>{resource.name}</strong>: {resource.number}
+                  {resource.hours ? ` · ${resource.hours}` : ''}
+                </li>
+              ))}
             </ul>
-            <button className="primary-button" onClick={() => setCrisisState(false)}>
-              Close
-            </button>
+            <div className="action-grid">
+              <button className="primary-button small" onClick={() => navigate('/escalation?crisis=true')}>
+                Open support options
+              </button>
+              <button className="soft-button" onClick={() => setCrisisState(false)}>
+                Close
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -1310,6 +1543,152 @@ function JournalScreen({ state, updateState, activeModule }) {
   );
 }
 
+
+function EscalationScreen({ state }) {
+  const navigate = useNavigate();
+  const [params] = useSearchParams();
+  const isCrisis = params.get('crisis') === 'true';
+  const [acknowledged, setAcknowledged] = useState(false);
+  const [activePanel, setActivePanel] = useState(null);
+  const [peerSent, setPeerSent] = useState(false);
+
+  // AI companion chat (multi-turn within the session).
+  const [history, setHistory] = useState([]);
+  const [draft, setDraft] = useState('');
+  const [thinking, setThinking] = useState(false);
+
+  const entries = state.journal.entries.slice(-7);
+  const chartData = {
+    labels: entries.map((item) => shortDate(entryDay(item))),
+    datasets: [
+      {
+        data: entries.map((item) => entryScore(item)),
+        borderColor: '#4A7C59',
+        backgroundColor: 'rgba(74, 124, 89, 0.12)',
+        tension: 0.35,
+        fill: true,
+      },
+    ],
+  };
+
+  const sendToCompanion = async () => {
+    if (!draft.trim() || thinking) return;
+    const userText = draft.trim();
+    const nextHistory = [...history, { role: 'user', content: userText }];
+    setHistory(nextHistory);
+    setDraft('');
+    setThinking(true);
+    const { reply } = await nlpService.companion(userText, history);
+    setThinking(false);
+    setHistory([...nextHistory, { role: 'assistant', content: reply }]);
+  };
+
+  return (
+    <section>
+      <ScreenHeader
+        title="Your support options"
+        subtitle="No commander is notified. You decide, every time."
+      />
+
+      <div className="chart-card">
+        <div className="chart-caption">Your last 7 days — only you can see this.</div>
+        <Line options={chartOptions({ yLabel: false, yTicks: false, min: 0.2, max: 0.95 })} data={chartData} />
+      </div>
+
+      <div className="escalation-options">
+        <article className={`escalation-option ${activePanel === 'companion' ? 'active' : ''}`}>
+          <h3>AI journalling companion</h3>
+          <p>Talk it through with a warm, non-judgmental companion. Private to you.</p>
+          <button className="soft-button" onClick={() => setActivePanel(activePanel === 'companion' ? null : 'companion')}>
+            {activePanel === 'companion' ? 'Hide' : 'Open companion'}
+          </button>
+          {activePanel === 'companion' && (
+            <div className="companion-panel">
+              <div className="companion-thread">
+                {history.length === 0 && !thinking && (
+                  <p className="companion-hint">Share whatever's on your mind. There's no wrong way to start.</p>
+                )}
+                {history.map((message, index) => (
+                  <div key={index} className={`companion-bubble ${message.role}`}>
+                    {message.content}
+                  </div>
+                ))}
+                {thinking && <div className="companion-bubble assistant">…</div>}
+              </div>
+              <textarea
+                value={draft}
+                onChange={(event) => setDraft(event.target.value)}
+                placeholder="Write to your companion…"
+                rows={3}
+              />
+              <button className="primary-button small" onClick={sendToCompanion} disabled={thinking}>
+                {thinking ? 'Reflecting…' : 'Send'}
+              </button>
+            </div>
+          )}
+        </article>
+
+        <article className="escalation-option">
+          <h3>Peer support leader</h3>
+          <p>Send an anonymous request to a trained peer supporter in your unit. No names shared.</p>
+          <button className="soft-button" onClick={() => setPeerSent(true)}>
+            Request anonymously
+          </button>
+        </article>
+
+        <article className="escalation-option">
+          <h3>SAF counselling</h3>
+          <p>Speak with a SAF counsellor. Confidential and free.</p>
+          <div className="contact-card">
+            <strong>SAF Counselling Hotline</strong>
+            <a href="tel:1800-278-0022">1800-278-0022</a>
+          </div>
+        </article>
+
+        <article className="escalation-option">
+          <h3>I'm okay for now</h3>
+          <p>Head back to your journal. This stays here if you need it later.</p>
+          <button className="soft-button" onClick={() => navigate('/journal')}>
+            Back to journal
+          </button>
+        </article>
+      </div>
+
+      {peerSent && (
+        <Modal title="Request sent" onClose={() => setPeerSent(false)}>
+          <p>
+            An anonymous request has been sent to your unit's peer support leader. Your identity is not attached —
+            they'll simply know someone reached out and is open to a chat.
+          </p>
+          <button className="primary-button" onClick={() => setPeerSent(false)}>
+            Close
+          </button>
+        </Modal>
+      )}
+
+      {isCrisis && !acknowledged && (
+        <div className="overlay-alert">
+          <div className="alert-card">
+            <h2>{crisisResources.title}</h2>
+            <p>{crisisResources.message}</p>
+            <ul className="resource-list">
+              {crisisResources.resources.map((resource) => (
+                <li key={resource.name}>
+                  <strong>{resource.name}</strong>: {resource.number}
+                  {resource.hours ? ` · ${resource.hours}` : ''}
+                </li>
+              ))}
+            </ul>
+            <small>{crisisResources.disclaimer}</small>
+            <button className="primary-button" onClick={() => setAcknowledged(true)}>
+              I have read these resources
+            </button>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
 
 function ProfileScreen({ state, updateState, phase, activeModule }) {
   const profile = state.auth.profile;
@@ -1511,16 +1890,45 @@ function getPbs(attempts) {
   );
 }
 
+function dominantFromScore(score) {
+  if (score >= 0.6) return 'positive';
+  if (score >= 0.4) return 'neutral';
+  return 'negative';
+}
+
+// Builds a seed journal entry in the canonical shape:
+// { id, timestamp, text, sentiment: { score, crisis, dominant }, prompt }
+function seedEntry(date, prompt, text, score) {
+  return {
+    id: `seed-${date}`,
+    timestamp: `${date}T20:00:00.000Z`,
+    text,
+    sentiment: { score, crisis: false, dominant: dominantFromScore(score) },
+    prompt,
+  };
+}
+
+// Accessors tolerate both the canonical shape and any legacy {date, score} entries.
+function entryDay(entry) {
+  return (entry.timestamp || entry.date || '').slice(0, 10);
+}
+
+function entryScore(entry) {
+  return entry.sentiment?.score ?? entry.score ?? 0.5;
+}
+
+// Soft escalation trigger: the last 5 entries are all clearly low (< 0.4).
 function isTrendDeclining(entries) {
   if (entries.length < 5) return false;
-  const recent = entries.slice(-5).map((entry) => entry.score);
-  return recent.every((score, index) => index === 0 || score <= recent[index - 1]);
+  return entries.slice(-5).every((entry) => entryScore(entry) < 0.4);
 }
 
 function getJournalStreak(entries) {
   if (!entries.length) return 0;
 
-  const uniqueDays = [...new Set(entries.map((entry) => entry.date))].sort((a, b) => new Date(b) - new Date(a));
+  const uniqueDays = [...new Set(entries.map((entry) => entryDay(entry)))]
+    .filter(Boolean)
+    .sort((a, b) => new Date(b) - new Date(a));
   const today = getToday();
   let cursor = new Date(today.getFullYear(), today.getMonth(), today.getDate());
   const latestEntry = new Date(uniqueDays[0]);
