@@ -2167,3 +2167,117 @@ textarea::placeholder {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+/* ── Sentinel / Mental health layer ────────────────────────── */
+:root {
+  --amber-soft: rgba(214, 158, 46, 0.12);
+  --amber-border: rgba(214, 158, 46, 0.42);
+  --amber-text: #8a6314;
+  --rose-border: rgba(193, 116, 122, 0.55);
+}
+
+/* Soft declining-trend banner (never harsh red) */
+.trend-banner {
+  margin-top: 16px;
+  padding: 16px;
+  border: 1px solid var(--amber-border);
+  background: var(--amber-soft);
+  border-radius: 10px;
+  display: grid;
+  gap: 12px;
+}
+.trend-banner strong { display: block; margin-bottom: 4px; }
+.trend-banner p { margin: 0; color: var(--text-secondary); font-size: 0.9rem; }
+.trend-banner-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+
+/* Sentiment chips on past reflections */
+.sentiment-chip {
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border: 1px solid var(--border);
+}
+.sentiment-positive { background: rgba(74, 124, 89, 0.15); color: #2d4a3e; }
+.sentiment-neutral { background: rgba(98, 112, 104, 0.14); color: var(--text-secondary); }
+.sentiment-negative { background: var(--amber-soft); color: var(--amber-text); border-color: var(--amber-border); }
+.sentiment-crisis { background: var(--amber-soft); color: var(--amber-text); border-color: var(--amber-border); }
+
+/* Rose-bordered Buddy Tap input */
+.rose-input { border: 1px solid var(--rose-border) !important; }
+
+/* Inline moderation / validation warning */
+.inline-warning {
+  margin: 8px 0 0;
+  padding: 10px 12px;
+  border: 1px solid var(--amber-border);
+  background: var(--amber-soft);
+  color: var(--amber-text);
+  border-radius: 8px;
+  font-size: 0.88rem;
+}
+
+/* Distress resource banner (peer wall compose) */
+.distress-banner {
+  margin-top: 12px;
+  padding: 14px;
+  border: 1px solid var(--amber-border);
+  background: var(--amber-soft);
+  border-radius: 10px;
+}
+.distress-banner strong { display: block; margin-bottom: 6px; }
+.distress-banner p { margin: 0 0 8px; color: var(--text-secondary); font-size: 0.9rem; }
+.distress-badge { background: var(--amber-soft); color: var(--amber-text); border-color: var(--amber-border) !important; }
+
+/* Compose phase/topic selectors */
+.compose-selectors { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+.compose-selectors label { display: grid; gap: 6px; font-size: 0.78rem; color: var(--text-secondary); }
+.compose-selectors select { width: 100%; }
+
+/* Escalation options grid */
+.escalation-options { display: grid; gap: 12px; margin-top: 18px; }
+.escalation-option {
+  padding: 18px;
+  border: 1px solid var(--border);
+  background: var(--surface-primary);
+  border-radius: 12px;
+  box-shadow: var(--card-shadow);
+}
+.escalation-option.active { border-color: var(--border-strong); }
+.escalation-option h3 { margin: 0 0 6px; }
+.escalation-option p { margin: 0 0 12px; color: var(--text-secondary); font-size: 0.9rem; }
+.contact-card {
+  display: grid;
+  gap: 2px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-accent);
+}
+.contact-card a { font-family: var(--font-mono); font-size: 1.2rem; color: var(--accent); text-decoration: none; }
+
+/* AI companion chat panel */
+.companion-panel { margin-top: 12px; display: grid; gap: 10px; }
+.companion-thread {
+  display: grid;
+  gap: 8px;
+  max-height: 280px;
+  overflow-y: auto;
+  padding: 4px;
+}
+.companion-hint { margin: 0; color: var(--text-secondary); font-size: 0.85rem; font-style: italic; }
+.companion-bubble {
+  padding: 10px 12px;
+  border-radius: 12px;
+  font-size: 0.9rem;
+  line-height: 1.45;
+  max-width: 85%;
+}
+.companion-bubble.user { background: var(--accent); color: #f8f5ee; justify-self: end; }
+.companion-bubble.assistant { background: var(--surface-accent); color: var(--text-primary); justify-self: start; border: 1px solid var(--border); }
+
+@media (min-width: 680px) {
+  .escalation-options { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
