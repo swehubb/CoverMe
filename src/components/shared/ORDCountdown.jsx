@@ -11,6 +11,9 @@ export default function ORDCountdown({ enlistmentDate, ordDate, value, label = '
         <span className="countdown-number">{displayValue}</span>
         <span className="shared-countdown-label">{label}</span>
       </div>
+      <div className="countdown-progress" aria-hidden="true">
+        <span style={{ width: `${Math.min(100, Math.max(0, percentComplete))}%` }} />
+      </div>
       <div className="countdown-subtext">{percentComplete}% of the journey completed.</div>
     </section>
   );

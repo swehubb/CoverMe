@@ -53,16 +53,11 @@ export default function GoalSetupPage({ state, updateState }) {
   return (
     <section className="setup-screen">
       <header className="screen-header">
-        <p className="kicker">Profile setup · Step 1 of 2</p>
-        <h1>What's your IPPT goal?</h1>
-        {profile && (
-          <p>
-            PES {profile.pesStatus} · {profile.unit}
-          </p>
-        )}
-        <div className="rule" />
+        <p className="kicker">◢ Step 01 / 02 · Mission objective</p>
+        <h1>Set your IPPT target</h1>
+        <p>Your objective calibrates the fitness plans generated across your service journey.</p>
       </header>
-      <div className="card-stack">
+      <div className="goal-grid">
         {GOAL_OPTIONS.map((option) => (
           <button
             key={option.label}
@@ -70,17 +65,32 @@ export default function GoalSetupPage({ state, updateState }) {
             onClick={() => setSelected(option.label)}
             type="button"
           >
-            <div>
+            <div className="selection-card-topline">
               <div className="selection-title">{option.label}</div>
-              <div className="selection-subtitle">{option.points}</div>
+              <span className="selection-radio" aria-hidden="true" />
             </div>
+            <div className="selection-subtitle">{option.points}</div>
             <p>{option.description}</p>
           </button>
         ))}
       </div>
-      <button className="primary-button" onClick={saveGoal} disabled={!selected}>
-        Let's go.
-      </button>
+      <div className="goal-confirm-panel">
+        <div>
+          <span>PES status</span>
+          <strong>PES {profile?.pesStatus}</strong>
+        </div>
+        <div>
+          <span>Unit</span>
+          <strong>{profile?.unit}</strong>
+        </div>
+        <div>
+          <span>Selected</span>
+          <strong>{selected || 'Pending'}</strong>
+        </div>
+        <button className="primary-button" onClick={saveGoal} disabled={!selected}>
+          Confirm objective →
+        </button>
+      </div>
     </section>
   );
 }

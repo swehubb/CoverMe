@@ -26,9 +26,14 @@ export default function ConsentPage({ state, updateState }) {
 
   return (
     <section className="consent-screen">
+      <header className="screen-header consent-header">
+        <p className="kicker">◢ Step 02 / 02 · Sentinel wellness layer</p>
+        <h1>Your mind is part of the mission</h1>
+        <p>Private reflection and trend tracking, controlled by you at every step.</p>
+      </header>
       <div className="consent-card">
-        <p className="kicker">Profile setup · Step 2 of 2</p>
-        <h1>Your journal is yours.</h1>
+        <p className="kicker">◢ Your journal is yours</p>
+        <h2>Private by design</h2>
         <div className="consent-copy">
           <p>
             Cover Me uses NLP — natural language processing — to look at the words in your journal
@@ -48,13 +53,17 @@ export default function ConsentPage({ state, updateState }) {
             have the right to delete your data at any time.
           </p>
         </div>
+      </div>
+      <div className="consent-card consent-controls">
+        <p className="kicker">◢ Deployment choice</p>
+        <h2>Enable Sentinel?</h2>
+        <p>
+          You can change this preference later. Skipping does not restrict any other Cover Me
+          feature.
+        </p>
         <div className="consent-actions">
-          <button className="primary-button" onClick={() => proceed(true)}>
-            I agree to enable wellness tracking
-          </button>
-          <button className="secondary-button consent-skip-button" onClick={() => proceed(false)}>
-            Skip for now
-          </button>
+          <button className="primary-button" onClick={() => proceed(true)}>Enable wellness tracking →</button>
+          <button className="secondary-button consent-skip-button" onClick={() => proceed(false)}>Skip for now</button>
         </div>
       </div>
     </section>
