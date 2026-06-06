@@ -3,7 +3,17 @@
 // Talks to the Express backend (which holds the API key). Every call degrades to a safe
 // fallback on network/server failure so the app never crashes when the backend is down.
 
+import { explicitCrisisWords } from '../data/utils/sentimentKeywords.js';
+
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+
+// Local crisis safety net — only unambiguous self-harm phrasing is caught here,
+// so explicit language is still flagged if the backend is unreachable, while
+// ambiguous Singlish hyperbole is left to the model (see explicitCrisisWords).
+function detectCrisis(text) {
+  const lower = (text || '').toLowerCase();
+  return explicitCrisisWords.some((phrase) => lower.includes(phrase));
+}
 
 const SENTIMENT_FALLBACK = { score: 0.5, crisis: false, dominant: 'neutral' };
 const MODERATE_FALLBACK = { approved: true, flagged: false, distress: false, reason: '' };
@@ -11,6 +21,7 @@ const COMPANION_FALLBACK = {
   reply:
     "Thanks for sharing that — I'm here with you. What feels like the heaviest part of it right now?",
 };
+const TREND_FALLBACK = { narrative: 'Your recent entries show a mixed picture.', trend: 'stable' };
 
 async function postJSON(path, body) {
   const response = await fetch(`${API_URL}${path}`, {
@@ -26,13 +37,15 @@ async function postJSON(path, body) {
 export async function analyze(text) {
   try {
     const data = await postJSON('/api/sentiment', { text });
+    const crisis = Boolean(data.crisis) || detectCrisis(text);
     return {
-      score: typeof data.score === 'number' ? data.score : SENTIMENT_FALLBACK.score,
-      crisis: Boolean(data.crisis),
-      dominant: data.dominant || SENTIMENT_FALLBACK.dominant,
+      score: crisis ? 0.05 : typeof data.score === 'number' ? data.score : SENTIMENT_FALLBACK.score,
+      crisis,
+      dominant: crisis ? 'crisis' : data.dominant || SENTIMENT_FALLBACK.dominant,
     };
   } catch (err) {
     console.warn('[nlpService.analyze] fallback:', err.message);
+    if (detectCrisis(text)) return { score: 0.05, crisis: true, dominant: 'crisis' };
     return { ...SENTIMENT_FALLBACK };
   }
 }
@@ -53,10 +66,11 @@ export async function moderate(text) {
   }
 }
 
-// companion(text, history) -> { reply }
-export async function companion(text, history = []) {
+// companion(message, history) -> { reply }
+// history is the full prior conversation: [{ role: 'user'|'assistant', content }].
+export async function companion(message, history = []) {
   try {
-    const data = await postJSON('/api/companion', { text, history });
+    const data = await postJSON('/api/companion', { message, history });
     return { reply: data.reply || COMPANION_FALLBACK.reply };
   } catch (err) {
     console.warn('[nlpService.companion] fallback:', err.message);
@@ -64,4 +78,19 @@ export async function companion(text, history = []) {
   }
 }
 
-export default { analyze, moderate, companion };
+// trendNarrative(scores) -> { narrative, trend }
+// scores: chronological sentiment scores, most recent last (3–7 used).
+export async function trendNarrative(scores) {
+  try {
+    const data = await postJSON('/api/trend-narrative', { scores });
+    return {
+      narrative: data.narrative || TREND_FALLBACK.narrative,
+      trend: data.trend || TREND_FALLBACK.trend,
+    };
+  } catch (err) {
+    console.warn('[nlpService.trendNarrative] fallback:', err.message);
+    return { ...TREND_FALLBACK };
+  }
+}
+
+export default { analyze, moderate, companion, trendNarrative };

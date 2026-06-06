@@ -1301,6 +1301,27 @@ function JournalScreen({ state, updateState }) {
   const [saving, setSaving] = useState(false);
   const [crisisState, setCrisisState] = useState(false);
   const [dismissedDip, setDismissedDip] = useState(false);
+  const [trendInfo, setTrendInfo] = useState(null);
+
+  // AI trend narrative: recomputed whenever the recent scores change (e.g. a new
+  // entry is submitted). Needs at least 3 entries — otherwise we show nothing.
+  const recentScores = state.journal.entries.slice(-7).map(entryScore);
+  const scoreKey = recentScores.join(',');
+  useEffect(() => {
+    if (!state.onboarding.consented || recentScores.length < 3) {
+      setTrendInfo(null);
+      return undefined;
+    }
+    let active = true;
+    nlpService.trendNarrative(recentScores).then((res) => {
+      if (active) setTrendInfo(res);
+    });
+    return () => {
+      active = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scoreKey, state.onboarding.consented]);
+
   const prompt = wellnessPrompts[getToday().getDate() % wellnessPrompts.length];
   const entries = state.journal.entries.slice(-14);
   const reviewEntries = [...state.journal.entries].slice(-5).reverse();
@@ -1401,6 +1422,9 @@ function JournalScreen({ state, updateState }) {
         <div className="chart-card">
           <div className="chart-caption">Your emotional trend - only you can see this.</div>
           <Line options={chartOptions({ yLabel: false, yTicks: false, min: 0.2, max: 0.95 })} data={chartData} />
+          {trendInfo && (
+            <p className={`trend-narrative trend-${trendInfo.trend}`}>{trendInfo.narrative}</p>
+          )}
           {dipState && !dismissedDip && (
             <div className="trend-banner">
               <div>
@@ -1608,7 +1632,7 @@ function EscalationScreen({ state }) {
                 {history.length === 0 && !thinking && (
                   <p className="companion-hint">Share whatever's on your mind. There's no wrong way to start.</p>
                 )}
-                {history.map((message, index) => (
+                {history.slice(-20).map((message, index) => (
                   <div key={index} className={`companion-bubble ${message.role}`}>
                     {message.content}
                   </div>
@@ -1621,9 +1645,22 @@ function EscalationScreen({ state }) {
                 placeholder="Write to your companion…"
                 rows={3}
               />
-              <button className="primary-button small" onClick={sendToCompanion} disabled={thinking}>
-                {thinking ? 'Reflecting…' : 'Send'}
-              </button>
+              <div className="companion-actions">
+                <button className="primary-button small" onClick={sendToCompanion} disabled={thinking}>
+                  {thinking ? 'Reflecting…' : 'Send'}
+                </button>
+                {history.length > 0 && (
+                  <button
+                    className="soft-button"
+                    onClick={() => {
+                      setHistory([]);
+                      setDraft('');
+                    }}
+                  >
+                    Start over
+                  </button>
+                )}
+              </div>
             </div>
           )}
         </article>
