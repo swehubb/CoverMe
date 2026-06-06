@@ -45,7 +45,13 @@ ChartJS.register(CategoryScale, LinearScale, LineElement, PointElement, Tooltip,
 
 const STORAGE_KEY = 'cover-me-state';
 
+// Bump this whenever the seeded mock data below (journal, intel/wall posts, IPPT,
+// training feed, etc.) changes. On load, a saved copy with an older version is
+// dropped so the new seeds appear instead of being overridden by the stale cache.
+const SEED_VERSION = 4;
+
 const defaultState = {
+  __seedVersion: SEED_VERSION,
   auth: {
     isAuthenticated: false,
     profile: null,
@@ -127,6 +133,15 @@ function loadState() {
     if (parsed?.auth?.profile && !parsed.auth.profile.vocation) {
       parsed.auth.profile.vocation =
         parsed.auth.profile.unit?.includes('SIR') ? 'Infantry' : 'General';
+    }
+    if (parsed.__seedVersion !== SEED_VERSION) {
+      // Seed data changed in code: start from the fresh seeds, but keep the user
+      // signed in and their onboarding choices so they don't get logged out.
+      return {
+        ...defaultState,
+        auth: { ...defaultState.auth, ...parsed.auth },
+        onboarding: { ...defaultState.onboarding, ...parsed.onboarding },
+      };
     }
     return {
       ...defaultState,
@@ -499,7 +514,7 @@ function FeedScreenContent({
   const [showCompose, setShowCompose] = useState(false);
   const [postTitle, setPostTitle] = useState('');
   const [postDraft, setPostDraft] = useState('');
-  const [postPhase, setPostPhase] = useState(wallPhases[1].value);
+  const [postPhase, setPostPhase] = useState(wallPhases[0].value);
   const [postTopic, setPostTopic] = useState(wallTopics[0]);
   const [composeError, setComposeError] = useState('');
   const [distressPrompt, setDistressPrompt] = useState(false);
