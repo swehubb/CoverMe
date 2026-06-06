@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import Insignia from '../components/shared/Insignia';
 
 function normalizeProfile(profile) {
   if (!profile) return null;
@@ -44,21 +45,41 @@ export default function LandingPage({ state, updateState }) {
   return (
     <section className="auth-screen">
       <div className="auth-hero">
-        <div className="auth-mark">COVER ME</div>
-        <p className="auth-tagline">A clearer NS journey from uncertainty to service readiness.</p>
+        <div className="auth-terminal-label">
+          <Insignia size={26} />
+          <span>SAF · LAND FORCE · TERMINAL ACCESS</span>
+        </div>
+        <div>
+          <p className="kicker">⟢ National Service Command Terminal</p>
+          <div className="auth-mark">COVER<br />ME</div>
+          <p className="auth-tagline">
+            Your personal command terminal for the full NS journey. Track conditioning, own your
+            wellbeing, and cover the mates beside you.
+          </p>
+        </div>
+        <div className="auth-build">
+          <span>BUILD 2.4.0</span>
+          <span>SECURE CHANNEL</span>
+          <span className="auth-online">● ONLINE</span>
+        </div>
       </div>
       <div className="auth-panel">
-        <p className="kicker">Secure access</p>
-        <h1>Log in with Singpass</h1>
-        <div className="rule" />
+        <p className="kicker">◢ Authentication required</p>
+        <h1>Secure access</h1>
         <p className="auth-copy">
-          Sign in once to pull your MINDEF-linked profile and enter the right module for where you
-          are in the NS journey.
+          Verify your identity with Singpass to access your service profile. Your existing session
+          and MINDEF-linked profile flow remain unchanged.
         </p>
         <button className="singpass-button" onClick={handleLogin} disabled={loading}>
           <span className="singpass-logo">S</span>
-          <span>{loading ? 'Connecting...' : 'Log in with Singpass'}</span>
+          <span>{loading ? 'Establishing link...' : 'Log in with Singpass'}</span>
         </button>
+        <div className="auth-assurances">
+          <div><span>▣</span><p><strong>Singpass verified</strong>Name, NRIC, PES and enlistment pulled securely</p></div>
+          <div><span>▣</span><p><strong>No passwords stored</strong>Government-grade identity, zero credentials held</p></div>
+          <div><span>▣</span><p><strong>PDPA compliant</strong>Wellness data remains under your control</p></div>
+        </div>
+        <p className="auth-classification">GOVTECH × MINDEF · UNCLASSIFIED · FOR DEMONSTRATION</p>
       </div>
     </section>
   );

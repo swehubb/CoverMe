@@ -215,6 +215,7 @@ function AppRoutes({ state, updateState }) {
 
 function AppShell({ state, updateState }) {
   const { setCurrentModule: setAuthCurrentModule } = useAuth();
+  const navigate = useNavigate();
   const profile = state.auth.profile;
   const phase = getPhase(profile?.enlistmentDate);
   const activeModule = state.ui.activeModule || phase;
@@ -230,11 +231,17 @@ function AppShell({ state, updateState }) {
     setAuthCurrentModule(module);
   };
 
+  const signOut = () => {
+    localStorage.removeItem(STORAGE_KEY);
+    updateState(() => defaultState);
+    navigate('/login');
+  };
+
   return (
     <div className={`app-frame module-${activeModule}`}>
       <div className="grain" />
       <div className="shell">
-        <Navbar />
+        <Navbar profile={profile} onModuleChange={setActiveModule} onSignOut={signOut} />
         <main className="screen-body">
           <Routes>
             <Route path="/home" element={<Navigate to={`/${activeModule}`} replace />} />
