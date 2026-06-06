@@ -21,15 +21,14 @@ export default function PeerIntelPage({ state }) {
 
   return (
     <section className="feed-screen">
-      <header className="screen-header">
-        <p className="kicker">Enlist · Screen 9</p>
-        <h1>Peer Intel Feed</h1>
-        <p>
+      <div style={{ marginBottom: 24 }}>
+        <div className="label" style={{ color: 'var(--accent-text)', marginBottom: 8 }}>▲ ENLIST · PEER INTEL</div>
+        <h1 className="h-display" style={{ fontSize: 52, marginBottom: 6 }}>PEER INTEL FEED</h1>
+        <p style={{ color: 'var(--text-dim)' }}>
           Verified experiences from NS veterans, organised by vocation and intake batch. Read-only
           — contributions come from those who have completed the journey.
         </p>
-        <div className="rule" />
-      </header>
+      </div>
 
       <div className="intel-filter-bar">
         <select

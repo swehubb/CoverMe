@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import { Navigate, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import Insignia from '../components/shared/Insignia';
+import Panel from '../components/ui/Panel';
 
 function normalizeProfile(profile) {
   if (!profile) return null;
@@ -23,9 +24,7 @@ export default function LandingPage({ state, updateState }) {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (state.auth.isAuthenticated) {
-      navigate('/setup/goal', { replace: true });
-    }
+    if (state.auth.isAuthenticated) navigate('/setup/goal', { replace: true });
   }, [navigate, state.auth.isAuthenticated]);
 
   const handleLogin = async () => {
@@ -33,54 +32,68 @@ export default function LandingPage({ state, updateState }) {
     const profile = normalizeProfile(await login());
     updateState((current) => ({
       ...current,
-      auth: {
-        isAuthenticated: true,
-        profile,
-      },
+      auth: { isAuthenticated: true, profile },
     }));
     navigate('/setup/goal');
     setLoading(false);
   };
 
   return (
-    <section className="auth-screen">
-      <div className="auth-hero">
-        <div className="auth-terminal-label">
-          <Insignia size={26} />
-          <span>SAF · LAND FORCE · TERMINAL ACCESS</span>
+    <div className="auth-page" data-branch="army">
+      <div className="auth-left">
+        <div className="auth-brand-row">
+          <Insignia branch="army" size={26} />
+          <span className="auth-brand-label">SAF · LAND FORCE · TERMINAL ACCESS</span>
         </div>
-        <div>
-          <p className="kicker">⟢ National Service Command Terminal</p>
-          <div className="auth-mark">COVER<br />ME</div>
-          <p className="auth-tagline">
-            Your personal command terminal for the full NS journey. Track conditioning, own your
-            wellbeing, and cover the mates beside you.
+        <div className="fade-up">
+          <div className="label" style={{ color: 'var(--accent-text)', marginBottom: 14 }}>
+            ▲ NATIONAL SERVICE COMMAND TERMINAL
+          </div>
+          <h1 className="h-display auth-hero-title">COVER<br />ME</h1>
+          <p className="auth-subtext">
+            Your personal command terminal for the full NS journey — track conditioning,
+            own your wellbeing, and cover the mates beside you.
           </p>
         </div>
-        <div className="auth-build">
+        <div className="auth-footer">
           <span>BUILD 2.4.0</span>
           <span>SECURE CHANNEL</span>
-          <span className="auth-online">● ONLINE</span>
+          <span style={{ color: 'var(--success)' }}><span className="blink">●</span> ONLINE</span>
         </div>
       </div>
-      <div className="auth-panel">
-        <p className="kicker">◢ Authentication required</p>
-        <h1>Secure access</h1>
-        <p className="auth-copy">
-          Verify your identity with Singpass to access your service profile. Your existing session
-          and MINDEF-linked profile flow remain unchanged.
-        </p>
-        <button className="singpass-button" onClick={handleLogin} disabled={loading}>
-          <span className="singpass-logo">S</span>
-          <span>{loading ? 'Establishing link...' : 'Log in with Singpass'}</span>
-        </button>
-        <div className="auth-assurances">
-          <div><span>▣</span><p><strong>Singpass verified</strong>Name, NRIC, PES and enlistment pulled securely</p></div>
-          <div><span>▣</span><p><strong>No passwords stored</strong>Government-grade identity, zero credentials held</p></div>
-          <div><span>▣</span><p><strong>PDPA compliant</strong>Wellness data remains under your control</p></div>
+
+      <div className="auth-right">
+        <Panel ticks elevated style={{ padding: 36 }} className="fade-up">
+          <span className="label" style={{ marginBottom: 6 }}>▲ AUTHENTICATION REQUIRED</span>
+          <h2 className="h-title" style={{ fontSize: 38, marginBottom: 8 }}>SECURE ACCESS</h2>
+          <p style={{ color: 'var(--text-dim)', fontSize: 14.5, lineHeight: 1.6, marginBottom: 28 }}>
+            Verify your identity with Singpass to access your service profile.
+            All session data is encrypted end-to-end.
+          </p>
+          <button className="singpass-btn" onClick={handleLogin} disabled={loading}>
+            {loading ? 'ESTABLISHING LINK…' : 'LOG IN WITH SINGPASS'}
+          </button>
+          <div className="hr" style={{ margin: '26px 0 18px' }} />
+          <div className="auth-trust-list">
+            {[
+              ['SINGPASS VERIFIED', 'Name, NRIC, PES & enlistment pulled securely'],
+              ['NO PASSWORDS STORED', 'Government-grade identity, zero credentials held'],
+              ['PDPA COMPLIANT', 'Wellness data deleted on request, retained for service only'],
+            ].map(([title, desc]) => (
+              <div key={title} className="auth-trust-item">
+                <span className="auth-trust-icon">◈</span>
+                <div>
+                  <div className="auth-trust-title">{title}</div>
+                  <div className="auth-trust-desc">{desc}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Panel>
+        <div className="mono-dim" style={{ marginTop: 20, textAlign: 'center' }}>
+          GOVTECH × MINDEF · UNCLASSIFIED · FOR DEMONSTRATION
         </div>
-        <p className="auth-classification">GOVTECH × MINDEF · UNCLASSIFIED · FOR DEMONSTRATION</p>
       </div>
-    </section>
+    </div>
   );
 }

@@ -18,10 +18,13 @@ import {
   useSearchParams,
 } from 'react-router-dom';
 import { useAuth } from './contexts/AuthContext';
-import Navbar from './components/layout/Navbar';
-import PageWrapper from './components/layout/PageWrapper';
-import ORDCountdown from './components/shared/ORDCountdown';
-import FeatureCard from './components/shared/FeatureCard';
+import CommandRail from './components/layout/CommandRail';
+import TopBar from './components/layout/TopBar';
+import Panel from './components/ui/Panel';
+import Stat from './components/ui/Stat';
+import Award from './components/ui/Award';
+import SvgLineChart from './components/ui/SvgLineChart';
+import Insignia from './components/shared/Insignia';
 import { peerIntelPosts } from './data/mockPeerIntel';
 import { peerWallPosts, wallPhases, wallTopics } from './data/mockPeerWall';
 import { buddyTapSelectableMembers } from './data/mockPlatoon';
@@ -89,6 +92,7 @@ const defaultState = {
   },
   ui: {
     activeModule: '',
+    branch: 'army',
   },
 };
 
@@ -219,16 +223,21 @@ function AppShell({ state, updateState }) {
   const profile = state.auth.profile;
   const phase = getPhase(profile?.enlistmentDate);
   const activeModule = state.ui.activeModule || phase;
+  const branch = state.ui.branch || 'army';
 
   const setActiveModule = (module) => {
     updateState((current) => ({
       ...current,
-      ui: {
-        ...current.ui,
-        activeModule: module,
-      },
+      ui: { ...current.ui, activeModule: module },
     }));
     setAuthCurrentModule(module);
+  };
+
+  const setBranch = (b) => {
+    updateState((current) => ({
+      ...current,
+      ui: { ...current.ui, branch: b },
+    }));
   };
 
   const signOut = () => {
@@ -238,11 +247,15 @@ function AppShell({ state, updateState }) {
   };
 
   return (
-    <div className={`app-frame module-${activeModule}`}>
-      <div className="grain" />
-      <div className="shell">
-        <Navbar profile={profile} onModuleChange={setActiveModule} onSignOut={signOut} />
-        <main className="screen-body">
+    <div className="app-shell" data-branch={branch}>
+      <CommandRail
+        branch={branch}
+        activeModule={activeModule}
+        onSignOut={signOut}
+      />
+      <div className="shell-main">
+        <TopBar branch={branch} onBranchChange={setBranch} profile={profile} />
+        <main className="screen-body scroll">
           <Routes>
             <Route path="/home" element={<Navigate to={`/${activeModule}`} replace />} />
             <Route
@@ -365,47 +378,76 @@ function HomeDashboard({ state, phase, activeModule }) {
           ],
         };
 
-  return (
-    <PageWrapper
-      title={`Welcome back, ${toTitleCase(firstName)}`}
-      description={moduleContent.summary}
-      module={activeModule}
-    >
-      <p className="kicker">{moduleContent.eyebrow}</p>
-      <div className="dashboard-hero">
-        <ORDCountdown
-          enlistmentDate={profile.enlistmentDate}
-          ordDate={ordDate}
-          value={ordDays}
-          label="DAYS TO ORD"
-        />
-        <div className="secondary-stack">
-          {activeModule === 'enlist' ? (
-            <div className="mini-panel">
-              <span>Enlisting in</span>
-              <strong>{enlistDays} days</strong>
-            </div>
-          ) : (
-            <div className="mini-panel">
-              <span>Week of NS</span>
-              <strong>{phase === 'serve' ? `Week ${weekOfNs}` : 'Preview · Week 1'}</strong>
-            </div>
-          )}
-        </div>
-      </div>
+  const ordPct = Math.min(100, Math.round(((730 - ordDays) / 730) * 100));
+  const ipptAttempts = state.ippt.attempts;
+  const latestIppt = ipptAttempts.length ? ipptAttempts[ipptAttempts.length - 1] : null;
+  const latestScore = latestIppt
+    ? calculateIpptScore(latestIppt.pushups, latestIppt.situps, latestIppt.runSeconds)
+    : null;
+  const streakDays = getJournalStreak(state.journal.entries);
 
-      <div className="feature-grid">
+  return (
+    <div className="dash-page">
+      {/* Identity + ORD hero */}
+      <Panel ticks elevated style={{ padding: 26, display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 30, alignItems: 'center', marginBottom: 16 }}>
+        <div>
+          <span className="label" style={{ color: 'var(--accent-text)', marginBottom: 12 }}>▲ ACTIVE SERVICE COMMAND</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+            <div style={{ width: 52, height: 52, borderRadius: 8, background: 'var(--accent-soft)', border: '1px solid var(--accent-line)', display: 'grid', placeItems: 'center', color: 'var(--accent-text)' }}>
+              <Insignia branch={state.ui?.branch || 'army'} size={28} />
+            </div>
+            <div>
+              <div className="h-display" style={{ fontSize: 22 }}>{toTitleCase(profile.fullName)}</div>
+              <div className="mono-dim" style={{ color: 'var(--text-dim)' }}>
+                {profile.pesStatus} · {profile.unit} · {(profile.vocation || 'INFANTRY').toUpperCase()}
+              </div>
+            </div>
+          </div>
+        </div>
+        <div style={{ borderLeft: '1px solid var(--border)', paddingLeft: 30 }}>
+          <span className="label" style={{ marginBottom: 8 }}>▲ ORD COUNTDOWN</span>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
+            <span className="stat-val" style={{ fontSize: 56, color: 'var(--amber)' }}>{ordDays}</span>
+            <span className="mono" style={{ color: 'var(--text-dim)', fontSize: 14 }}>DAYS REMAINING</span>
+          </div>
+          <div style={{ height: 6, background: 'var(--bg)', borderRadius: 3, marginTop: 14, overflow: 'hidden' }}>
+            <div style={{ width: `${ordPct}%`, height: '100%', background: 'var(--accent-2)' }} />
+          </div>
+          <div className="mono-dim" style={{ display: 'flex', justifyContent: 'space-between', marginTop: 7 }}>
+            <span>WEEK {weekOfNs} OF NS</span><span>{ordPct}% COMPLETE</span>
+          </div>
+        </div>
+      </Panel>
+
+      {/* Readiness band */}
+      <Panel flush style={{ marginBottom: 16, padding: '18px 26px' }}>
+        <div className="readiness-band">
+          <Stat label="LATEST IPPT" value={latestScore ? latestScore.score : '—'} unit="PTS" size={34} />
+          <Stat label="CURRENT AWARD" value={latestScore ? latestScore.award : '—'} size={26} color="var(--amber)" />
+          <Stat label="2.4KM PB" value={latestIppt ? formatRunTime(Math.min(...ipptAttempts.map((a) => a.runSeconds))) : '—'} size={34} />
+          <Stat label="JOURNAL STREAK" value={streakDays} unit="D" size={34} />
+        </div>
+      </Panel>
+
+      <span className="label" style={{ margin: '30px 0 14px', display: 'block' }}>▲ MODULE DECK</span>
+      <div className="dash-features-grid">
         {moduleContent.detailBlocks.map((block) => (
-          <FeatureCard
-            key={block.title}
-            title={block.title}
-            description={block.body}
-            eyebrow={activeModule === 'enlist' ? 'Enlist Feature' : 'Serve Feature'}
-            onClick={() => navigate(block.to)}
-          />
+          <button key={block.title} className="feat-card" onClick={() => navigate(block.to)}>
+            <Panel ticks className="feat-card-inner" style={{ gap: 0 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 18 }}>
+                <span style={{ fontSize: 24, color: 'var(--accent-text)' }}>▲</span>
+                <span className="mono-dim">{block.title.slice(0, 6).toUpperCase()}</span>
+              </div>
+              <div style={{ marginTop: 'auto' }}>
+                <div className="h-title" style={{ fontSize: 20, marginBottom: 6 }}>{block.title.toUpperCase()}</div>
+                <div style={{ color: 'var(--text-dim)', fontSize: 13.5, lineHeight: 1.45, marginBottom: 14 }}>{block.body}</div>
+                <span className="feat-card-arrow">ENTER MODULE →</span>
+              </div>
+            </Panel>
+          </button>
         ))}
       </div>
-    </PageWrapper>
+    </div>
   );
 }
 
@@ -1410,208 +1452,161 @@ function JournalScreen({ state, updateState }) {
     ],
   };
 
+  const svgScores = entries.map((item) => ({ v: entryScore(item) }));
+  const declining = dipState;
+
   return (
-    <section>
-      <ScreenHeader
-        title="Sentinel"
-        subtitle="Private reflection with NLP, or natural language processing, used only to estimate your own emotional trend."
-      />
+    <div style={{ height: '100%', overflow: 'auto', padding: '28px 36px' }}>
+      {/* Header + Streak */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 24 }}>
+        <div>
+          <span className="label" style={{ color: 'var(--accent-text)', marginBottom: 8 }}>▲ MODULE 13 · WELLNESS LAYER</span>
+          <h1 className="h-display" style={{ fontSize: 52 }}>SENTINEL</h1>
+        </div>
+        <Panel flush style={{ padding: '12px 20px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <span className="stat-label">JOURNAL STREAK</span>
+            <span className="stat-val" style={{ fontSize: 30 }}>{streakDays}</span>
+            <span className="stat-unit" style={{ fontSize: 16, color: 'var(--text-dim)', marginLeft: 0 }}>NIGHTS</span>
+          </div>
+        </Panel>
+      </div>
       <StreakCalendar entries={state.journal.entries} streakDays={streakDays} />
 
-      <div className="journal-layout">
-        <div className="journal-entry-card">
-          <p className="journal-prompt">{prompt}</p>
+      <div className="sentinel-grid" style={{ marginBottom: 24 }}>
+        {/* Left — prompt + entry */}
+        <Panel ticks style={{ padding: 24 }}>
+          <span className="label" style={{ marginBottom: 12 }}>▲ TONIGHT'S REFLECTION</span>
+          <p style={{ fontFamily: 'var(--font-head)', fontWeight: 700, fontSize: 26, lineHeight: 1.15, marginBottom: 18 }}>{prompt}</p>
           <textarea
+            className="journal-textarea"
             value={entry}
-            onChange={(event) => setEntry(event.target.value)}
-            placeholder="Write freely. This space is private."
-            rows={7}
+            onChange={(e) => setEntry(e.target.value)}
+            placeholder="Write freely. No scores, no judgement — just what's on your mind."
           />
-          <button className="primary-button" onClick={submitEntry} disabled={saving}>
-            {saving ? 'Reflecting…' : 'Submit'}
-          </button>
-        </div>
-        <div className="chart-card sentinel-chart-card">
-          <div className="sentinel-chart-head">
-            <span className="chart-caption">Your emotional trend — only you can see this.</span>
-            {latestScore != null && (
-              <span className="sentinel-score-readout">
-                <span className="sentinel-score-value">{latestScore}</span>
-                <span className="sentinel-score-max">/ 100</span>
-              </span>
-            )}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 16 }}>
+            <span className="mono-dim">PRIVATE · ENCRYPTED · {entry.trim().split(/\s+/).filter(Boolean).length} WORDS</span>
+            <button className="btn" disabled={saving || !entry.trim()} onClick={submitEntry}>
+              {saving ? 'REFLECTING…' : 'SUBMIT ENTRY'}
+            </button>
           </div>
-          <div className="sentinel-chart-canvas">
-            <Line options={chartOptions({ yLabel: true, yTicks: true, min: 0, max: 100 })} data={chartData} />
+        </Panel>
+
+        {/* Right — trend chart */}
+        <Panel ticks style={{ padding: '22px 24px 16px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10 }}>
+            <span className="label">▲ YOUR EMOTIONAL TREND · {entries.length} NIGHTS</span>
+            <span className="mono-dim" style={{ color: declining ? 'var(--danger)' : 'var(--success)' }}>
+              {declining ? '▼ DECLINING' : '▲ STABLE'}
+            </span>
           </div>
-          {trendInfo && (
-            <p className={`trend-narrative trend-${trendInfo.trend}`}>{trendInfo.narrative}</p>
+          <SvgLineChart
+            data={svgScores}
+            accessor={(d) => d.v}
+            yMax={1} yMin={0}
+            height={200}
+            color={declining ? '#D98A55' : 'var(--amber)'}
+            fmt={(v) => v.toFixed(1)}
+          />
+          <div className="mono-dim" style={{ marginTop: 6 }}>
+            {trendInfo ? trendInfo.narrative : 'Self-awareness is the mechanism. Only you ever see this graph.'}
+          </div>
+          {declining && !dismissedDip && (
+            <button className="btn ghost full" style={{ marginTop: 14 }} onClick={() => navigate('/escalation')}>
+              REVIEW SUPPORT OPTIONS →
+            </button>
           )}
-          {dipState && !dismissedDip && (
-            <div className="trend-banner">
-              <div>
-                <strong>Your private trend has been low for a few days.</strong>
-                <p>Nothing has been shared with anyone. You decide what happens next.</p>
-              </div>
-              <div className="trend-banner-actions">
-                <button className="primary-button small" onClick={() => navigate('/escalation')}>
-                  See your options
-                </button>
-                <button className="soft-button" onClick={() => setDismissedDip(true)}>
-                  I'm okay, dismiss
-                </button>
-              </div>
-            </div>
+          {declining && !dismissedDip && (
+            <button className="btn neutral full" style={{ marginTop: 8 }} onClick={() => setDismissedDip(true)}>
+              I'M OKAY, DISMISS
+            </button>
           )}
-        </div>
+        </Panel>
       </div>
-      <details className="journal-review-card sentinel-explainer">
-        <summary className="sentinel-explainer-summary">
-          <div>
-            <p className="kicker">User-Controlled Escalation</p>
-            <h3>How Sentinel works</h3>
-          </div>
-          <span className="sentinel-explainer-toggle" aria-hidden>＋</span>
-        </summary>
-        <div className="sentinel-explainer-body">
-        <div className="escalation-list">
-          <div className="escalation-item">
-            <strong>When your trend declines for 5 or more days</strong>
-            <p>
-              Sentinel shows you your own graph and lets you decide what happens next. You can chat with an AI journaling
-              companion, connect anonymously with a peer support leader, open SAF counselling resources, or dismiss the
-              prompt.
-            </p>
-          </div>
-          <div className="escalation-item">
-            <strong>No automatic alerts to superiors</strong>
-            <p>
-              No sergeant, commander, or superior is notified automatically. The user decides how far the escalation goes,
-              every time.
-            </p>
-          </div>
-          <div className="escalation-item">
-            <strong>One exception for explicit self-harm or suicide language</strong>
-            <p>
-              If a journal entry contains explicit self-harm or suicide language, crisis resources are surfaced immediately
-              to the user, including helpline numbers and a direct SAF counselling path. Even then, no commander is
-              notified. Resources are surfaced to the user only, never about them.
-            </p>
-          </div>
-        </div>
-        <div className="escalation-mockup-grid">
-          <div className="escalation-mockup-card">
-            <p className="kicker">Activated Mockup</p>
-            <h4>Trend dip detected</h4>
-            <div className="mockup-trend">
-              <span className="mockup-trend-bar bar-1" />
-              <span className="mockup-trend-bar bar-2" />
-              <span className="mockup-trend-bar bar-3" />
-              <span className="mockup-trend-bar bar-4" />
-              <span className="mockup-trend-bar bar-5" />
-              <span className="mockup-trend-bar bar-6" />
+      {/* How Sentinel responds */}
+      <span className="label" style={{ margin: '30px 0 12px', display: 'block' }}>▲ HOW SENTINEL RESPONDS</span>
+      <div style={{ display: 'grid', gridTemplateColumns: '1.25fr 1fr', gap: 16, marginBottom: 24 }}>
+        <Panel ticks style={{ padding: 26 }}>
+          {[
+            ['▷', 'WHEN YOUR TREND DECLINES', 'If your private trend drops for 5+ days, Sentinel shows you your own graph and lets you decide: AI companion, peer support, SAF counselling, or dismiss. Always your call.'],
+            ['◈', 'NO AUTOMATIC ALERTS TO SUPERIORS', 'No sergeant, commander, or superior is ever notified automatically. You decide how far any escalation goes, every single time.'],
+            ['◮', 'ONE EXCEPTION — EXPLICIT CRISIS LANGUAGE', 'If an entry contains explicit self-harm or suicide language, crisis resources are surfaced to you immediately. Even then, no commander is notified.'],
+          ].map(([icon, t, d]) => (
+            <div key={t} style={{ display: 'flex', gap: 14, marginBottom: 20 }}>
+              <span style={{ color: 'var(--accent-text)', marginTop: 1, fontSize: 15, width: 18, flexShrink: 0 }}>{icon}</span>
+              <div>
+                <div style={{ fontFamily: 'var(--font-head)', fontWeight: 700, fontSize: 16, letterSpacing: '0.03em', marginBottom: 4 }}>{t}</div>
+                <div style={{ color: 'var(--text-dim)', fontSize: 13.5, lineHeight: 1.55 }}>{d}</div>
+              </div>
             </div>
-            <p className="mockup-copy">
-              We noticed your private trend has been lower for several days. You decide what happens next.
-            </p>
-            <div className="mockup-action-list">
-              <button className="soft-button">Chat with AI journaling companion</button>
-              <button className="soft-button">Connect anonymously with peer support leader</button>
-              <button className="soft-button">SAF counselling resources</button>
-              <button className="soft-button">I'm okay, dismiss</button>
-            </div>
+          ))}
+        </Panel>
+        <Panel style={{ padding: 26 }}>
+          <span className="label" style={{ marginBottom: 6 }}>▲ SUPPORT RESOURCES</span>
+          <div className="mono-dim" style={{ marginBottom: 18 }}>CONFIDENTIAL · ALWAYS AVAILABLE</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {[
+              ['SAF COUNSELLING CENTRE', 'Direct counsellor pathway', 'BOOK'],
+              ['SAF COUNSELLING CARELINE', '24-hour', '1800 278 0022'],
+              ['IMH MENTAL HEALTH HELPLINE', '24-hour', '6389 2222'],
+              ['SAMARITANS OF SINGAPORE', 'SOS · 24-hour', '1767'],
+            ].map(([t, sub, n]) => (
+              <div key={t} className="crisis-resource-row">
+                <div>
+                  <div style={{ fontFamily: 'var(--font-head)', fontWeight: 700, fontSize: 14, letterSpacing: '0.02em' }}>{t}</div>
+                  <div className="mono-dim" style={{ fontSize: 10.5 }}>{sub}</div>
+                </div>
+                <span className="mono" style={{ color: 'var(--amber)', fontSize: 15 }}>{n}</span>
+              </div>
+            ))}
           </div>
-          <div className="escalation-mockup-card crisis">
-            <p className="kicker">Crisis Preview</p>
-            <h4>Immediate support resources</h4>
-            <p className="mockup-copy">
-              This appears only when a journal entry contains explicit self-harm or suicide language. The entry is not
-              saved, and no commander is notified.
-            </p>
-            <ul className="resource-list">
-              <li>SAF Counselling Centre</li>
-              <li>Direct SAF counsellor contact pathway</li>
-              <li>IMH Mental Health Helpline: 6389 2222</li>
-              <li>Samaritans of Singapore: 1767</li>
-            </ul>
-          </div>
-        </div>
-        </div>
-      </details>
-      <div className="journal-review-card">
-        <div className="journal-review-header">
-          <div>
-            <p className="kicker">Review Past Entries</p>
-            <h3>Past reflections</h3>
-          </div>
-          <span className="info-badge">{allReflections.length} saved</span>
-        </div>
+        </Panel>
+      </div>
+
+      {/* Past reflections */}
+      <span className="label" style={{ margin: '0 0 12px', display: 'block' }}>▲ PAST REFLECTIONS</span>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {allReflections.length === 0 ? (
-          <p className="reflection-empty">No reflections yet. Your first entry will appear here.</p>
-        ) : (
-          <div className="reflection-list">
-            {allReflections.map((item, index) => {
-              const score100 = Math.round(entryScore(item) * 100);
-              const dominant = item.sentiment?.dominant || dominantFromScore(entryScore(item));
-              return (
-                <details key={item.id ?? `${entryDay(item)}-${index}`} className="reflection-item">
-                  <summary className="reflection-summary">
-                    <span className="reflection-date">{shortDate(entryDay(item))}</span>
-                    <span className="reflection-summary-meta">
-                      <span className={`sentiment-chip sentiment-${dominant}`}>{dominant}</span>
-                      <span className="reflection-score">
-                        <strong>{score100}</strong>
-                        <small>/100</small>
-                      </span>
-                      <span className="reflection-chevron" aria-hidden>⌄</span>
-                    </span>
-                  </summary>
-                  <div className="reflection-body">
-                    {item.prompt && <p className="reflection-prompt">“{item.prompt}”</p>}
-                    <p className="reflection-text">{item.text}</p>
-                    <div className="reflection-scorebar">
-                      <span
-                        className={`reflection-scorebar-fill sentiment-${dominant}`}
-                        style={{ width: `${score100}%` }}
-                      />
-                    </div>
-                    <p className="reflection-comment">{reflectionComment(item)}</p>
-                  </div>
-                </details>
-              );
-            })}
-          </div>
-        )}
+          <div className="empty-state">No reflections yet. Your first entry will appear here.</div>
+        ) : allReflections.map((item, index) => {
+          const score = entryScore(item);
+          return (
+            <Panel key={item.id ?? `${entryDay(item)}-${index}`} flush
+              className="past-entry-row"
+              style={{ borderLeftColor: score < 0.5 ? 'var(--danger)' : 'var(--accent)' }}
+            >
+              <span className="mono" style={{ color: 'var(--text-dim)', fontSize: 12, width: 52 }}>{shortDate(entryDay(item))}</span>
+              <span className="past-entry-score" style={{ color: score < 0.5 ? '#D98A55' : 'var(--amber)' }}>
+                {score.toFixed(2)}
+              </span>
+              <span style={{ flex: 1, color: 'var(--text-dim)', fontSize: 13.5 }}>{item.text}</span>
+            </Panel>
+          );
+        })}
       </div>
 
       {crisisState && (
-        <div className="overlay-alert">
-          <div className="alert-card">
-            <h2>{crisisResources.title}</h2>
-            <p>{crisisResources.message}</p>
-            <p>
-              Your entry was not saved. These resources are shown only to you — no commander or superior is notified.
+        <div className="overlay-bg">
+          <Panel elevated className="modal-card" style={{ borderColor: 'rgba(192,57,43,0.4)' }}>
+            <span className="label" style={{ color: '#d96055', marginBottom: 10 }}>▲ IMMEDIATE SUPPORT</span>
+            <h2 className="h-title" style={{ fontSize: 32, marginBottom: 14 }}>YOU DON'T HAVE TO CARRY THIS ALONE.</h2>
+            <p style={{ color: 'var(--text-dim)', lineHeight: 1.6, marginBottom: 24 }}>
+              What you wrote matters. These lines are confidential and reach people trained to help right now.{' '}
+              <strong style={{ color: 'var(--text)' }}>No commander is notified.</strong>
             </p>
-            <ul className="resource-list">
-              {crisisResources.resources.map((resource) => (
-                <li key={resource.name}>
-                  <strong>{resource.name}</strong>: {resource.number}
-                  {resource.hours ? ` · ${resource.hours}` : ''}
-                </li>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 24 }}>
+              {(crisisResources.resources || []).map((r) => (
+                <div key={r.name} className="crisis-resource-row">
+                  <span style={{ fontFamily: 'var(--font-head)', fontWeight: 700, letterSpacing: '0.03em' }}>{r.name}</span>
+                  <span className="mono" style={{ color: 'var(--amber)', fontSize: 18 }}>{r.number}</span>
+                </div>
               ))}
-            </ul>
-            <div className="action-grid">
-              <button className="primary-button small" onClick={() => navigate('/escalation?crisis=true')}>
-                Open support options
-              </button>
-              <button className="soft-button" onClick={() => setCrisisState(false)}>
-                Close
-              </button>
             </div>
-          </div>
+            <button className="btn neutral full" onClick={() => setCrisisState(false)}>I'VE SEEN THIS → CLOSE</button>
+          </Panel>
         </div>
       )}
-    </section>
+    </div>
   );
 }
 
@@ -1853,11 +1848,10 @@ function ModuleToggle({ activeModule, onChange }) {
 
 function ScreenHeader({ eyebrow, title, subtitle }) {
   return (
-    <header className="screen-header">
-      {eyebrow && <p className="kicker">{eyebrow}</p>}
-      <h1>{title}</h1>
-      {subtitle && <p>{subtitle}</p>}
-      <div className="rule" />
+    <header style={{ marginBottom: 24 }}>
+      {eyebrow && <span className="label" style={{ color: 'var(--accent-text)', marginBottom: 8 }}>{eyebrow}</span>}
+      <h1 className="h-display" style={{ fontSize: 52 }}>{title}</h1>
+      {subtitle && <p style={{ color: 'var(--text-dim)', marginTop: 4 }}>{subtitle}</p>}
     </header>
   );
 }

@@ -2,35 +2,28 @@ import { useRef, useState } from 'react';
 import { askChatbot } from '../services/mockChatbot';
 import { starterQuestions } from '../data';
 
-function renderChatText(text) {
-  const lines = text
-    .split('\n')
-    .map((l) => l.trim())
-    .filter((l) => l.length > 0);
-
-  return lines.map((line, i) => {
-    // Strip any **markdown** the LLM slips through
-    const parts = line.split(/\*\*(.*?)\*\*/g);
-    return (
-      <p key={i} className="chat-bubble-line">
-        {parts.map((part, j) =>
-          j % 2 === 1 ? <strong key={j}>{part}</strong> : part,
-        )}
-      </p>
-    );
-  });
-}
-
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
-async function callChatBackend(question) {
-  const response = await fetch(`${API_URL}/api/chat`, {
+async function callBackend(question) {
+  const res = await fetch(`${API_URL}/api/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ text: question }),
   });
-  if (!response.ok) throw new Error(`Backend ${response.status}`);
-  return response.json();
+  if (!res.ok) throw new Error(`Backend ${res.status}`);
+  return res.json();
+}
+
+function renderText(text) {
+  const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
+  return lines.map((line, i) => {
+    const parts = line.split(/\*\*(.*?)\*\*/g);
+    return (
+      <p key={i} className="chat-bubble-line">
+        {parts.map((p, j) => (j % 2 === 1 ? <strong key={j}>{p}</strong> : p))}
+      </p>
+    );
+  });
 }
 
 export default function AiChatPage() {
@@ -39,117 +32,80 @@ export default function AiChatPage() {
   const [loading, setLoading] = useState(false);
   const logRef = useRef(null);
 
-  const appendAssistant = (msg) => {
-    setMessages((current) => [...current, { role: 'assistant', ...msg }]);
-    setTimeout(() => {
-      logRef.current?.lastElementChild?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    }, 50);
+  const addMsg = (msg) => {
+    setMessages((c) => [...c, msg]);
+    setTimeout(() => logRef.current?.lastElementChild?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 50);
   };
 
   const sendMessage = async (question) => {
     const prompt = question.trim();
     if (!prompt || loading) return;
-
-    setMessages((current) => [...current, { role: 'user', text: prompt }]);
+    setMessages((c) => [...c, { role: 'user', text: prompt }]);
     setInput('');
     setLoading(true);
 
     try {
-      const result = await callChatBackend(prompt);
-      appendAssistant({
-        text: result.answer,
-        source: result.source,
-        matched: result.matched,
-      });
+      const result = await callBackend(prompt);
+      addMsg({ role: 'assistant', text: result.answer, source: result.source, matched: result.matched });
     } catch {
-      // Backend unavailable — fall back to local mock
       const fallback = askChatbot(prompt);
-      appendAssistant({
-        text: fallback.answer,
-        source: fallback.source,
-        matched: fallback.matched,
-        isFallback: true,
-      });
+      addMsg({ role: 'assistant', text: fallback.answer, source: fallback.source, matched: fallback.matched });
     } finally {
       setLoading(false);
     }
   };
 
-  const handleKeyDown = (event) => {
-    if (event.key === 'Enter' && !event.shiftKey) {
-      event.preventDefault();
-      sendMessage(input);
-    }
-  };
-
   return (
-    <section className="chat-screen">
-      <header className="screen-header">
-        <p className="kicker">Enlist · Screen 8</p>
-        <h1>Ask Anything</h1>
-        <p className="chat-source-note">
-          Answers sourced exclusively from verified SAF documentation — ns.sg and mindef.gov.sg.
-          Questions outside the knowledge base will be flagged.
-        </p>
-        <div className="rule" />
-      </header>
+    <div className="chat-page">
+      <div className="label" style={{ color: 'var(--accent-text)', marginBottom: 8 }}>▲ ENLIST · KNOWLEDGE BASE</div>
+      <h1 className="h-display" style={{ fontSize: 52, marginBottom: 6 }}>ASK ANYTHING</h1>
+      <p style={{ color: 'var(--text-dim)', marginBottom: 20, fontSize: 14 }}>
+        All answers sourced exclusively from verified SAF documentation — ns.sg and mindef.gov.sg.
+        Questions outside the knowledge base will be flagged.
+      </p>
 
       {messages.length === 0 && (
-        <div className="chip-row">
-          {starterQuestions.map((question) => (
-            <button
-              key={question}
-              type="button"
-              className="chip"
-              onClick={() => sendMessage(question)}
-            >
-              {question}
-            </button>
+        <div className="chat-starter-chips">
+          {starterQuestions.map((q) => (
+            <button key={q} className="chat-chip" onClick={() => sendMessage(q)}>{q}</button>
           ))}
         </div>
       )}
 
       <div className="chat-log" ref={logRef}>
-        {messages.map((message, index) => (
-          <div key={`${message.role}-${index}`} className={`message-row ${message.role}`}>
-            <div className={`message-bubble ${message.role}`}>
-              <div className="chat-bubble-body">{renderChatText(message.text)}</div>
-              {message.role === 'assistant' && message.source && (
-                <div className="message-source">{message.source}</div>
+        {messages.map((msg, i) => (
+          <div key={i} className={`chat-row ${msg.role}`}>
+            <div className={`chat-bubble ${msg.role}`}>
+              <div className="chat-bubble-body">{renderText(msg.text)}</div>
+              {msg.role === 'assistant' && msg.source && (
+                <div className="chat-source">Source: {msg.source}</div>
               )}
-              {message.role === 'assistant' && message.matched === false && !message.isFallback && (
-                <div className="message-source fallback">
-                  Outside verified knowledge base — visit ns.sg for official guidance.
-                </div>
+              {msg.role === 'assistant' && msg.matched === false && (
+                <div className="chat-source fallback">Outside verified knowledge base — visit ns.sg.</div>
               )}
             </div>
           </div>
         ))}
         {loading && (
-          <div className="message-row assistant">
-            <div className="message-bubble assistant chat-thinking">
-              Retrieving from SAF documentation…
-            </div>
+          <div className="chat-row assistant">
+            <div className="chat-bubble assistant chat-thinking">Retrieving from SAF documentation…</div>
           </div>
         )}
       </div>
 
-      <div className="chat-input-bar">
+      <div className="chat-input-row">
         <input
+          className="chat-input"
           value={input}
-          onChange={(event) => setInput(event.target.value)}
-          onKeyDown={handleKeyDown}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(input); } }}
           placeholder="Ask about enlistment, admin, training, or medical processes"
           disabled={loading}
         />
-        <button
-          className="primary-button small"
-          onClick={() => sendMessage(input)}
-          disabled={loading || !input.trim()}
-        >
-          {loading ? '…' : 'Send'}
+        <button className="btn sm" onClick={() => sendMessage(input)} disabled={loading || !input.trim()}>
+          {loading ? '…' : 'SEND'}
         </button>
       </div>
-    </section>
+    </div>
   );
 }

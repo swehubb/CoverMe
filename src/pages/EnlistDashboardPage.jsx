@@ -1,69 +1,50 @@
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import FeatureCard from '../components/shared/FeatureCard';
-import ORDCountdown from '../components/shared/ORDCountdown';
+import Panel from '../components/ui/Panel';
+import Stat from '../components/ui/Stat';
+import Insignia from '../components/shared/Insignia';
 
 function getToday() {
-  const now = new Date();
-  return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const n = new Date();
+  return new Date(n.getFullYear(), n.getMonth(), n.getDate());
+}
+function addYears(ds, y) {
+  const d = new Date(ds);
+  d.setFullYear(d.getFullYear() + y);
+  return d;
+}
+function daysBetween(from, to) {
+  const t = to instanceof Date ? to : new Date(to);
+  return Math.max(0, Math.ceil((t - from) / 86400000));
+}
+function toTitleCase(t) {
+  return t.toLowerCase().split(' ').map((p) => p.charAt(0).toUpperCase() + p.slice(1)).join(' ');
 }
 
-function addYears(dateString, years) {
-  const date = new Date(dateString);
-  date.setFullYear(date.getFullYear() + years);
-  return date;
-}
-
-function daysBetween(fromDate, toDate) {
-  const target = toDate instanceof Date ? toDate : new Date(toDate);
-  return Math.max(0, Math.ceil((target - fromDate) / (1000 * 60 * 60 * 24)));
-}
-
-function toTitleCase(text) {
-  return text
-    .toLowerCase()
-    .split(' ')
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ');
-}
-
-const FEATURE_CARDS = [
-  {
-    title: 'What to Expect',
-    description:
-      'A structured first-look at enlistment day, reporting flow, packing checklist, first-day schedule, and key NS terminology.',
-    to: '/what-to-expect',
-  },
-  {
-    title: 'PES-Based Fitness Prep',
-    description:
-      'Training plans calibrated to your Physical Employment Status and chosen IPPT target, with exercises and component targets.',
-    to: '/fitness-prep',
-  },
-  {
-    title: 'AI Chatbot',
-    description:
-      'Retrieval-only SAF answers for jargon, admin questions, and day-one uncertainty. Sourced from verified SAF documentation.',
-    to: '/ai-chat',
-  },
-  {
-    title: 'Peer Intel Feed',
-    description:
-      'Real batch intel from veterans organised by vocation and intake. Know what helped others before you step through the gates.',
-    to: '/peer-intel',
-  },
+const FEATURES = [
+  { id: 'expect',  path: '/what-to-expect', glyph: '▤', label: 'WHAT TO EXPECT',      desc: 'Reporting flow, packing checklist, first-day schedule, key NS terminology.' },
+  { id: 'fitness', path: '/fitness-prep',   glyph: '▲', label: 'PES-BASED FITNESS',    desc: 'Training plans calibrated to your PES and chosen IPPT target, with sets and reps.' },
+  { id: 'chat',    path: '/ai-chat',        glyph: '◈', label: 'AI CHATBOT',            desc: 'Retrieval-only SAF answers. Sourced from ns.sg and mindef.gov.sg exclusively.' },
+  { id: 'intel',   path: '/peer-intel',     glyph: '⊕', label: 'PEER INTEL FEED',      desc: 'Verified experiences from veterans, organised by vocation and batch.' },
 ];
 
 export default function EnlistDashboardPage({ state, updateState, phase }) {
   const navigate = useNavigate();
   const profile = state.auth.profile;
-  const firstName = toTitleCase(
-    profile.fullName.split(' ')[1] || profile.fullName.split(' ')[0],
-  );
   const today = getToday();
   const ordDate = addYears(profile.enlistmentDate, 2);
   const ordDays = daysBetween(today, ordDate);
   const enlistDays = daysBetween(today, profile.enlistmentDate);
+  const firstName = toTitleCase(profile.fullName.split(' ')[1] || profile.fullName.split(' ')[0]);
+  const attempts = state.ippt.attempts;
+  const latestIppt = attempts.length ? attempts[attempts.length - 1] : null;
+  const latestScore = latestIppt ? (() => {
+    const p = Math.min(25, Math.floor(latestIppt.pushups / 2));
+    const s = Math.min(25, Math.floor(latestIppt.situps / 2));
+    const r = Math.max(0, Math.min(50, Math.round((900 - latestIppt.runSeconds) / 6)));
+    return Math.max(0, Math.min(100, p + s + r));
+  })() : null;
+  const ordPct = Math.min(100, Math.round(((730 - ordDays) / 730) * 100));
 
   useEffect(() => {
     updateState((current) => {
@@ -73,50 +54,72 @@ export default function EnlistDashboardPage({ state, updateState, phase }) {
   }, [updateState]);
 
   return (
-    <section>
-      <header className="screen-header">
-        <p className="kicker">Module 1 · Enlist</p>
-        <h1>Welcome back, {firstName}</h1>
-        <div className="rule" />
-      </header>
-
-      <div className="dashboard-hero">
-        <ORDCountdown
-          enlistmentDate={profile.enlistmentDate}
-          ordDate={ordDate}
-          value={ordDays}
-          label="DAYS TO ORD"
-        />
-        <div className="secondary-stack">
-          <div className="mini-panel">
-            <span>Enlisting in</span>
-            <strong>{enlistDays} days</strong>
-          </div>
-          <div className="mini-panel">
-            <span>Service profile</span>
-            <strong>
-              PES {profile.pesStatus} · {profile.unit}
-            </strong>
+    <div className="dash-page">
+      {/* Header */}
+      <Panel ticks elevated style={{ padding: 26, display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 30, alignItems: 'center', marginBottom: 16 }}>
+        <div>
+          <div className="label" style={{ color: 'var(--accent-text)', marginBottom: 12 }}>▲ ENLIST MODULE · ACTIVE SERVICE PREP</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+            <div style={{ width: 52, height: 52, borderRadius: 8, background: 'var(--accent-soft)', border: '1px solid var(--accent-line)', display: 'grid', placeItems: 'center', color: 'var(--accent-text)' }}>
+              <Insignia branch={state.ui.branch || 'army'} size={28} />
+            </div>
+            <div>
+              <div className="h-display" style={{ fontSize: 22 }}>
+                {toTitleCase(profile.fullName)}
+              </div>
+              <div className="mono-dim" style={{ color: 'var(--text-dim)' }}>
+                {profile.pesStatus} · {profile.unit} · {(profile.vocation || 'INFANTRY').toUpperCase()}
+              </div>
+            </div>
           </div>
         </div>
-      </div>
+        <div style={{ borderLeft: '1px solid var(--border)', paddingLeft: 30 }}>
+          <div className="label" style={{ marginBottom: 8 }}>▲ ORD COUNTDOWN</div>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
+            <span className="stat-val" style={{ fontSize: 56, color: 'var(--amber)' }}>{ordDays}</span>
+            <span className="mono" style={{ color: 'var(--text-dim)', fontSize: 14 }}>DAYS REMAINING</span>
+          </div>
+          <div style={{ height: 6, background: 'var(--bg)', borderRadius: 3, marginTop: 14, overflow: 'hidden' }}>
+            <div style={{ width: `${ordPct}%`, height: '100%', background: 'var(--accent-2)' }} />
+          </div>
+          <div className="mono-dim" style={{ display: 'flex', justifyContent: 'space-between', marginTop: 7 }}>
+            <span>ENLISTING IN {enlistDays} DAYS</span>
+            <span>{ordPct}% COMPLETE</span>
+          </div>
+        </div>
+      </Panel>
 
-      <p className="enlist-dash-summary">
-        Built for the pre-enlistee who has zero NS knowledge and maximum uncertainty. Every feature
-        reduces a specific anxiety.
-      </p>
+      {/* Readiness band */}
+      <Panel flush style={{ marginBottom: 16, padding: '18px 26px' }}>
+        <div className="readiness-band">
+          <Stat label="IPPT GOAL" value={(state.onboarding.ipptGoal || '—').toUpperCase()} size={28} color="var(--text)" />
+          <Stat label="LATEST SCORE" value={latestScore ?? '—'} unit={latestScore != null ? 'PTS' : undefined} size={28} />
+          <Stat label="PES STATUS" value={profile.pesStatus} size={28} color="var(--text)" />
+          <Stat label="ENLIST IN" value={enlistDays} unit="D" size={28} />
+        </div>
+      </Panel>
 
-      <div className="feature-grid">
-        {FEATURE_CARDS.map((card) => (
-          <FeatureCard
-            key={card.title}
-            title={card.title}
-            description={card.description}
-            eyebrow="Enlist Feature"
-            onClick={() => navigate(card.to)}
-          />
+      {/* Feature grid */}
+      <div className="label" style={{ margin: '30px 0 14px' }}>▲ MODULE DECK</div>
+      <div className="dash-features-grid">
+        {FEATURES.map((f) => (
+          <button key={f.id} className="feat-card" onClick={() => navigate(f.path)}>
+            <Panel ticks className="feat-card-inner" style={{ gap: 0 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 18 }}>
+                <span style={{ fontSize: 24, color: 'var(--accent-text)' }}>{f.glyph}</span>
+                <span className="mono-dim">{f.id.toUpperCase()}</span>
+              </div>
+              <div style={{ marginTop: 'auto' }}>
+                <div className="h-title" style={{ fontSize: 20, marginBottom: 6 }}>{f.label}</div>
+                <div style={{ color: 'var(--text-dim)', fontSize: 13.5, lineHeight: 1.45, marginBottom: 14 }}>{f.desc}</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span className="feat-card-arrow">ENTER MODULE →</span>
+                </div>
+              </div>
+            </Panel>
+          </button>
         ))}
       </div>
-    </section>
+    </div>
   );
 }
