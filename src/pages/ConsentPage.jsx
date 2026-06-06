@@ -1,26 +1,21 @@
 import { useState } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
+import { useAppContext } from '../contexts/AppContext';
 
 export default function ConsentPage({ state, updateState }) {
   const navigate = useNavigate();
+  const { consented, setConsented } = useAppContext();
 
   if (!state.auth.isAuthenticated) {
     return <Navigate to="/login" replace />;
   }
 
-  if (state.onboarding.consented) {
+  if (consented || state.onboarding.consented) {
     return <Navigate to="/home" replace />;
   }
 
   const proceed = (agreed) => {
-    updateState((current) => ({
-      ...current,
-      onboarding: {
-        ...current.onboarding,
-        consented: true,
-        journalOptIn: agreed,
-      },
-    }));
+    setConsented(true);
     navigate('/home');
   };
 

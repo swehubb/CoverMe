@@ -1,40 +1,58 @@
-import PageWrapper from '../components/layout/PageWrapper';
-import ServiceProfile from '../components/shared/ServiceProfile';
-import { useAuth } from '../contexts/AuthContext';
+import { useNavigate } from 'react-router-dom';
+import { useAppContext } from '../contexts/AppContext';
+import { ProfileRow, ScreenHeader } from './shared/AppScreenPrimitives';
+import { addYears, daysBetween, getToday, toTitleCase } from './shared/appScreenUtils';
 
-export default function ProfilePage() {
-  const { user, currentModule } = useAuth();
+export default function ProfilePage({ state, phase, activeModule, onResetAppState }) {
+  const { ipptGoal } = useAppContext();
+  const profile = state.auth.profile;
+  const navigate = useNavigate();
+  const ordDate = addYears(profile.enlistmentDate, 2);
+  const ordDays = daysBetween(getToday(), ordDate);
+
+  const signOut = () => {
+    onResetAppState?.();
+    navigate('/login');
+  };
 
   return (
-    <PageWrapper
-      title="Profile"
-      description="Mock Singpass user data from AuthContext, available across the app through useAuth()."
-      module={currentModule}
-    >
-      <div className="grid-2">
-        <ServiceProfile user={user} />
-        <section className="card">
-          <div className="section-label">Service Dates</div>
-          <div className="profile-grid">
-            <div className="profile-line">
-              <span className="muted-text">Enlistment Date</span>
-              <strong>{user.enlistmentDate}</strong>
+    <section>
+      <ScreenHeader title="Profile" subtitle="Singpass and MINDEF-sourced service profile." />
+      <div className="profile-layout">
+        <div className="profile-card profile-hero-card">
+          <p className="kicker">Service profile</p>
+          <h2>{toTitleCase(profile.fullName)}</h2>
+          <p className="profile-hero-meta">
+            PES {profile.pesStatus}
+            {profile.unit ? ` · ${profile.unit}` : ''}
+          </p>
+          <div className="profile-stat-row">
+            <div className="profile-stat">
+              <span>Current phase</span>
+              <strong>{phase === 'enlist' ? 'Enlist' : 'Serve'}</strong>
             </div>
-            <div className="profile-line">
-              <span className="muted-text">ORD Date</span>
-              <strong>{user.ordDate}</strong>
+            <div className="profile-stat">
+              <span>Module view</span>
+              <strong>{activeModule === 'enlist' ? 'Enlist' : 'Serve'}</strong>
             </div>
-            <div className="profile-line">
-              <span className="muted-text">Role</span>
-              <strong>{user.role}</strong>
-            </div>
-            <div className="profile-line">
-              <span className="muted-text">Current Module</span>
-              <strong>{currentModule}</strong>
+            <div className="profile-stat">
+              <span>Days to ORD</span>
+              <strong>{ordDays}</strong>
             </div>
           </div>
-        </section>
+        </div>
+        <div className="profile-card">
+          <ProfileRow label="Full name" value={toTitleCase(profile.fullName)} />
+          <ProfileRow label="NRIC" value={profile.nric} />
+          <ProfileRow label="Enlistment date" value={profile.enlistmentDate} />
+          <ProfileRow label="PES status" value={profile.pesStatus} />
+          <ProfileRow label="Unit" value={profile.unit || 'Pending assignment'} />
+          <ProfileRow label="IPPT goal" value={ipptGoal || state.onboarding.ipptGoal} />
+        </div>
       </div>
-    </PageWrapper>
+      <button className="secondary-button" onClick={signOut}>
+        Sign out
+      </button>
+    </section>
   );
 }

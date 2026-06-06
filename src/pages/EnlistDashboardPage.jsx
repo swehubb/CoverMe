@@ -2,30 +2,8 @@ import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import FeatureCard from '../components/shared/FeatureCard';
 import ORDCountdown from '../components/shared/ORDCountdown';
-
-function getToday() {
-  const now = new Date();
-  return new Date(now.getFullYear(), now.getMonth(), now.getDate());
-}
-
-function addYears(dateString, years) {
-  const date = new Date(dateString);
-  date.setFullYear(date.getFullYear() + years);
-  return date;
-}
-
-function daysBetween(fromDate, toDate) {
-  const target = toDate instanceof Date ? toDate : new Date(toDate);
-  return Math.max(0, Math.ceil((target - fromDate) / (1000 * 60 * 60 * 24)));
-}
-
-function toTitleCase(text) {
-  return text
-    .toLowerCase()
-    .split(' ')
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ');
-}
+import { useAppContext } from '../contexts/AppContext';
+import { addYears, daysBetween, getToday, toTitleCase } from './shared/appScreenUtils';
 
 const FEATURE_CARDS = [
   {
@@ -54,8 +32,9 @@ const FEATURE_CARDS = [
   },
 ];
 
-export default function EnlistDashboardPage({ state, updateState, phase }) {
+export default function EnlistDashboardPage({ state }) {
   const navigate = useNavigate();
+  const { activeModule, setActiveModule } = useAppContext();
   const profile = state.auth.profile;
   const firstName = toTitleCase(
     profile.fullName.split(' ')[1] || profile.fullName.split(' ')[0],
@@ -66,21 +45,24 @@ export default function EnlistDashboardPage({ state, updateState, phase }) {
   const enlistDays = daysBetween(today, profile.enlistmentDate);
 
   useEffect(() => {
-    updateState((current) => {
-      if (current.ui.activeModule === 'enlist') return current;
-      return { ...current, ui: { ...current.ui, activeModule: 'enlist' } };
-    });
-  }, [updateState]);
+    if (activeModule !== 'enlist') {
+      setActiveModule('enlist');
+    }
+  }, [activeModule, setActiveModule]);
 
   return (
-    <section>
-      <header className="screen-header">
+    <section className="dashboard-page">
+      <header className="screen-header dashboard-page-header">
         <p className="kicker">Module 1 · Enlist</p>
         <h1>Welcome back, {firstName}</h1>
+        <p className="dashboard-summary">
+          Built for the pre-enlistee who has zero NS knowledge and maximum uncertainty. Every feature
+          reduces a specific anxiety.
+        </p>
         <div className="rule" />
       </header>
 
-      <div className="dashboard-hero">
+      <div className="dashboard-hero dashboard-hero-balanced">
         <ORDCountdown
           enlistmentDate={profile.enlistmentDate}
           ordDate={ordDate}
@@ -100,11 +82,6 @@ export default function EnlistDashboardPage({ state, updateState, phase }) {
           </div>
         </div>
       </div>
-
-      <p className="enlist-dash-summary">
-        Built for the pre-enlistee who has zero NS knowledge and maximum uncertainty. Every feature
-        reduces a specific anxiety.
-      </p>
 
       <div className="feature-grid">
         {FEATURE_CARDS.map((card) => (

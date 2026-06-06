@@ -1,4 +1,5 @@
 import { preEnlistmentPlans } from '../data/mockWorkoutPlans';
+import { useAppContext } from '../contexts/AppContext';
 
 const COMPONENT_LABELS = {
   pushUps: 'Push-ups',
@@ -18,9 +19,10 @@ function formatExercise(ex) {
 }
 
 export default function FitnessPrepPage({ state }) {
+  const { ipptGoal } = useAppContext();
   const profile = state.auth.profile;
   const pesStatus = profile.pesStatus || 'B1';
-  const goal = state.onboarding.ipptGoal || 'Pass';
+  const goal = ipptGoal || state.onboarding.ipptGoal || 'Pass';
 
   const plan = preEnlistmentPlans[pesStatus] || preEnlistmentPlans['B1'];
 

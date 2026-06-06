@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useAppContext } from '../contexts/AppContext';
 import { peerIntelPosts, intelCategories, intelVocations, intelBatches } from '../data/mockPeerIntel';
 import { check as moderationCheck } from '../services/mockModeration';
 
@@ -10,8 +11,9 @@ function shortDate(dateString) {
   return new Date(dateString).toLocaleDateString('en-SG', { month: 'short', day: 'numeric' });
 }
 
-export default function PeerIntelPage({ state, updateState }) {
-  const posts = state.community.intelPosts;
+export default function PeerIntelPage() {
+  const { intelPosts, addIntelPost } = useAppContext();
+  const posts = intelPosts;
   const [categoryFilter, setCategoryFilter] = useState('All');
   const [vocationFilter, setVocationFilter] = useState('All');
   const [batchFilter, setBatchFilter] = useState('All');
@@ -35,25 +37,16 @@ export default function PeerIntelPage({ state, updateState }) {
 
     if (!result.approved) return;
 
-    updateState((current) => ({
-      ...current,
-      community: {
-        ...current.community,
-        intelPosts: [
-          {
-            id: `intel-${Date.now()}`,
-            author: 'Anonymous_Fieldnote',
-            category: categoryFilter === 'All' ? 'General' : categoryFilter,
-            vocation: vocationFilter === 'All' ? 'General' : vocationFilter,
-            batch: batchFilter === 'All' ? '26/27' : batchFilter,
-            verified: false,
-            content: draft.trim(),
-            createdAt: getToday().toISOString(),
-          },
-          ...current.community.intelPosts,
-        ],
-      },
-    }));
+    addIntelPost({
+      id: `intel-${Date.now()}`,
+      author: 'Anonymous_Fieldnote',
+      category: categoryFilter === 'All' ? 'General' : categoryFilter,
+      vocation: vocationFilter === 'All' ? 'General' : vocationFilter,
+      batch: batchFilter === 'All' ? '26/27' : batchFilter,
+      verified: false,
+      content: draft.trim(),
+      createdAt: getToday().toISOString(),
+    });
 
     setDraft('');
     setModResult(null);

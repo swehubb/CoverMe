@@ -1,15 +1,17 @@
 import { NavLink, useLocation } from 'react-router-dom';
+import { useAppContext } from '../../contexts/AppContext';
 import { useAuth } from '../../contexts/AuthContext';
 
 export default function Navbar() {
   const location = useLocation();
   const { currentModule, setCurrentModule } = useAuth();
-  const activeModule =
+  const { activeModule, setActiveModule } = useAppContext();
+  const resolvedActiveModule =
     location.pathname === '/serve'
       ? 'serve'
       : location.pathname === '/enlist'
         ? 'enlist'
-        : currentModule || 'enlist';
+        : activeModule || currentModule || 'enlist';
 
   return (
     <header className="nav-shell">
@@ -22,19 +24,25 @@ export default function Navbar() {
           <div className="module-toggle nav-module-toggle" role="tablist" aria-label="Module switch">
             <NavLink
               to="/enlist"
-              className={`nav-module-link${activeModule === 'enlist' ? ' active' : ''}`}
-              onClick={() => setCurrentModule('enlist')}
+              className={`nav-module-link${resolvedActiveModule === 'enlist' ? ' active' : ''}`}
+              onClick={() => {
+                setActiveModule('enlist');
+                setCurrentModule('enlist');
+              }}
             >
               Enlist
             </NavLink>
             <NavLink
               to="/serve"
-              className={`nav-module-link${activeModule === 'serve' ? ' active' : ''}`}
-              onClick={() => setCurrentModule('serve')}
+              className={`nav-module-link${resolvedActiveModule === 'serve' ? ' active' : ''}`}
+              onClick={() => {
+                setActiveModule('serve');
+                setCurrentModule('serve');
+              }}
             >
               Serve
             </NavLink>
-            <div className={`module-toggle-thumb ${activeModule}`} />
+            <div className={`module-toggle-thumb ${resolvedActiveModule}`} />
           </div>
           <NavLink to="/profile" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
             Profile

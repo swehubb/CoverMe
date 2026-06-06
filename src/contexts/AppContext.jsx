@@ -1,6 +1,6 @@
 import { createContext, useContext, useMemo, useState } from 'react';
 import buddyTapState from '../data/mockBuddyTap';
-import { ipptLogs as initialIpptLogs, trainingFeed } from '../data/mockIPPT';
+import { ipptLogs as initialIpptLogs, trainingFeed as initialTrainingFeed } from '../data/mockIPPT';
 import { journalEntries as initialJournalEntries } from '../data/mockJournal';
 import { peerIntelPosts as initialIntelPosts } from '../data/mockPeerIntel';
 import { peerWallPosts as initialWallPosts } from '../data/mockPeerWall';
@@ -21,17 +21,21 @@ export function AppProvider({ children }) {
   const [buddyTaps, setBuddyTaps] = useState(buddyTapState);
   const [wallPosts, setWallPosts] = useState(initialWallPosts);
   const [intelPosts, setIntelPosts] = useState(initialIntelPosts);
+  const [trainingFeed, setTrainingFeed] = useState(initialTrainingFeed);
+  const [activeModule, setActiveModule] = useState('');
+  const [ipptGoal, setIpptGoal] = useState('');
+  const [consented, setConsented] = useState(false);
 
   const addIPPTLog = (log) =>
     setIpptLogs((current) => [
-      { id: createId('ippt'), createdAt: timestampNow(), ...log },
       ...current,
+      { id: createId('ippt'), createdAt: timestampNow(), ...log },
     ]);
 
   const addJournalEntry = (entry) =>
     setJournalEntries((current) => [
-      { id: createId('journal'), date: timestampNow().slice(0, 10), ...entry },
       ...current,
+      { id: createId('journal'), date: timestampNow().slice(0, 10), ...entry },
     ]);
 
   const addBuddyTap = (tap) =>
@@ -55,21 +59,33 @@ export function AppProvider({ children }) {
   const value = useMemo(
     () => ({
       ipptLogs,
+      setIpptLogs,
       journalEntries,
+      setJournalEntries,
       buddyTapState: buddyTaps,
       buddyTaps,
+      setBuddyTaps,
       peerWallPosts: wallPosts,
       wallPosts,
+      setWallPosts,
       peerIntelPosts: intelPosts,
       intelPosts,
+      setIntelPosts,
       trainingFeed,
+      setTrainingFeed,
+      activeModule,
+      setActiveModule,
+      ipptGoal,
+      setIpptGoal,
+      consented,
+      setConsented,
       addIPPTLog,
       addJournalEntry,
       addBuddyTap,
       addWallPost,
       addIntelPost,
     }),
-    [buddyTaps, intelPosts, ipptLogs, journalEntries, wallPosts],
+    [activeModule, buddyTaps, consented, intelPosts, ipptGoal, ipptLogs, journalEntries, trainingFeed, wallPosts],
   );
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

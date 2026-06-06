@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
+import { useAppContext } from '../contexts/AppContext';
 
 const GOAL_OPTIONS = [
   {
@@ -26,25 +27,20 @@ const GOAL_OPTIONS = [
 
 export default function GoalSetupPage({ state, updateState }) {
   const navigate = useNavigate();
-  const [selected, setSelected] = useState(state.onboarding.ipptGoal);
+  const { ipptGoal, setIpptGoal, consented } = useAppContext();
+  const [selected, setSelected] = useState(ipptGoal || state.onboarding.ipptGoal);
 
   if (!state.auth.isAuthenticated) {
     return <Navigate to="/login" replace />;
   }
 
-  if (state.onboarding.ipptGoal && state.onboarding.consented) {
+  if ((ipptGoal || state.onboarding.ipptGoal) && (consented || state.onboarding.consented)) {
     return <Navigate to="/home" replace />;
   }
 
   const saveGoal = () => {
     if (!selected) return;
-    updateState((current) => ({
-      ...current,
-      onboarding: {
-        ...current.onboarding,
-        ipptGoal: selected,
-      },
-    }));
+    setIpptGoal(selected);
     navigate('/setup/consent');
   };
 
