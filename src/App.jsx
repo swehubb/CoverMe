@@ -248,7 +248,7 @@ function AppShell({ state, updateState }) {
             />
             <Route path="/fitness-prep" element={<FitnessPrepPage state={state} />} />
             <Route path="/ai-chat" element={<AiChatPage />} />
-            <Route path="/peer-intel" element={<PeerIntelPage state={state} updateState={updateState} />} />
+            <Route path="/peer-intel" element={<PeerIntelPage state={state} />} />
             <Route path="/peer-support" element={<PeerSupportWallScreen state={state} updateState={updateState} />} />
             <Route path="/buddy-tap" element={<BuddyTapScreen state={state} updateState={updateState} />} />
             <Route path="/escalation" element={<EscalationScreen state={state} />} />
@@ -406,7 +406,7 @@ function HomeDashboard({ state, phase, activeModule }) {
 
 function CommunityScreen({ state, updateState, activeModule }) {
   return activeModule === 'enlist' ? (
-    <PeerIntelPage state={state} updateState={updateState} />
+    <PeerIntelPage state={state} />
   ) : (
     <PeerSupportWallScreen state={state} updateState={updateState} />
   );
