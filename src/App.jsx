@@ -1324,7 +1324,7 @@ function JournalScreen({ state, updateState }) {
 
   const prompt = wellnessPrompts[getToday().getDate() % wellnessPrompts.length];
   const entries = state.journal.entries.slice(-14);
-  const reviewEntries = [...state.journal.entries].slice(-5).reverse();
+  const allReflections = [...state.journal.entries].reverse();
   const streakDays = getJournalStreak(state.journal.entries);
   const dipState = isTrendDeclining(entries);
 
@@ -1384,15 +1384,21 @@ function JournalScreen({ state, updateState }) {
     setSaving(false);
   };
 
+  const scoreSeries = entries.map((item) => Math.round(entryScore(item) * 100));
+  const latestScore = scoreSeries.length ? scoreSeries[scoreSeries.length - 1] : null;
   const chartData = {
     labels: entries.map((item) => shortDate(entryDay(item))),
     datasets: [
       {
-        data: entries.map((item) => entryScore(item)),
+        data: scoreSeries,
         borderColor: '#4A7C59',
         backgroundColor: 'rgba(74, 124, 89, 0.12)',
         tension: 0.35,
         fill: true,
+        pointRadius: 3,
+        pointBackgroundColor: '#4A7C59',
+        pointBorderColor: '#fffdf8',
+        pointBorderWidth: 1.5,
       },
     ],
   };
@@ -1403,9 +1409,8 @@ function JournalScreen({ state, updateState }) {
         title="Sentinel"
         subtitle="Private reflection with NLP, or natural language processing, used only to estimate your own emotional trend."
       />
-      <div className="badge-row">
-        <span className="info-badge">Journal streak: {streakDays} day{streakDays === 1 ? '' : 's'}</span>
-      </div>
+      <StreakCalendar entries={state.journal.entries} streakDays={streakDays} />
+
       <div className="journal-layout">
         <div className="journal-entry-card">
           <p className="journal-prompt">{prompt}</p>
@@ -1419,9 +1424,19 @@ function JournalScreen({ state, updateState }) {
             {saving ? 'Reflecting…' : 'Submit'}
           </button>
         </div>
-        <div className="chart-card">
-          <div className="chart-caption">Your emotional trend - only you can see this.</div>
-          <Line options={chartOptions({ yLabel: false, yTicks: false, min: 0.2, max: 0.95 })} data={chartData} />
+        <div className="chart-card sentinel-chart-card">
+          <div className="sentinel-chart-head">
+            <span className="chart-caption">Your emotional trend — only you can see this.</span>
+            {latestScore != null && (
+              <span className="sentinel-score-readout">
+                <span className="sentinel-score-value">{latestScore}</span>
+                <span className="sentinel-score-max">/ 100</span>
+              </span>
+            )}
+          </div>
+          <div className="sentinel-chart-canvas">
+            <Line options={chartOptions({ yLabel: true, yTicks: true, min: 0, max: 100 })} data={chartData} />
+          </div>
           {trendInfo && (
             <p className={`trend-narrative trend-${trendInfo.trend}`}>{trendInfo.narrative}</p>
           )}
@@ -1443,13 +1458,15 @@ function JournalScreen({ state, updateState }) {
           )}
         </div>
       </div>
-      <div className="journal-review-card">
-        <div className="journal-review-header">
+      <details className="journal-review-card sentinel-explainer">
+        <summary className="sentinel-explainer-summary">
           <div>
             <p className="kicker">User-Controlled Escalation</p>
-            <h3>How Sentinel responds</h3>
+            <h3>How Sentinel works</h3>
           </div>
-        </div>
+          <span className="sentinel-explainer-toggle" aria-hidden>＋</span>
+        </summary>
+        <div className="sentinel-explainer-body">
         <div className="escalation-list">
           <div className="escalation-item">
             <strong>When your trend declines for 5 or more days</strong>
@@ -1512,28 +1529,52 @@ function JournalScreen({ state, updateState }) {
             </ul>
           </div>
         </div>
-      </div>
+        </div>
+      </details>
       <div className="journal-review-card">
         <div className="journal-review-header">
           <div>
             <p className="kicker">Review Past Entries</p>
             <h3>Past reflections</h3>
           </div>
-          <span className="info-badge">{reviewEntries.length} saved</span>
+          <span className="info-badge">{allReflections.length} saved</span>
         </div>
-        <div className="journal-review-list">
-          {reviewEntries.map((item, index) => (
-            <article key={item.id ?? `${entryDay(item)}-${index}`} className="journal-review-item">
-              <div className="journal-review-topline">
-                <strong>{shortDate(entryDay(item))}</strong>
-                <span className={`sentiment-chip sentiment-${item.sentiment?.dominant || dominantFromScore(entryScore(item))}`}>
-                  {item.sentiment?.dominant || dominantFromScore(entryScore(item))}
-                </span>
-              </div>
-              <p>{item.text.length > 80 ? `${item.text.slice(0, 80)}…` : item.text}</p>
-            </article>
-          ))}
-        </div>
+        {allReflections.length === 0 ? (
+          <p className="reflection-empty">No reflections yet. Your first entry will appear here.</p>
+        ) : (
+          <div className="reflection-list">
+            {allReflections.map((item, index) => {
+              const score100 = Math.round(entryScore(item) * 100);
+              const dominant = item.sentiment?.dominant || dominantFromScore(entryScore(item));
+              return (
+                <details key={item.id ?? `${entryDay(item)}-${index}`} className="reflection-item">
+                  <summary className="reflection-summary">
+                    <span className="reflection-date">{shortDate(entryDay(item))}</span>
+                    <span className="reflection-summary-meta">
+                      <span className={`sentiment-chip sentiment-${dominant}`}>{dominant}</span>
+                      <span className="reflection-score">
+                        <strong>{score100}</strong>
+                        <small>/100</small>
+                      </span>
+                      <span className="reflection-chevron" aria-hidden>⌄</span>
+                    </span>
+                  </summary>
+                  <div className="reflection-body">
+                    {item.prompt && <p className="reflection-prompt">“{item.prompt}”</p>}
+                    <p className="reflection-text">{item.text}</p>
+                    <div className="reflection-scorebar">
+                      <span
+                        className={`reflection-scorebar-fill sentiment-${dominant}`}
+                        style={{ width: `${score100}%` }}
+                      />
+                    </div>
+                    <p className="reflection-comment">{reflectionComment(item)}</p>
+                  </div>
+                </details>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {crisisState && (
@@ -1586,11 +1627,15 @@ function EscalationScreen({ state }) {
     labels: entries.map((item) => shortDate(entryDay(item))),
     datasets: [
       {
-        data: entries.map((item) => entryScore(item)),
+        data: entries.map((item) => Math.round(entryScore(item) * 100)),
         borderColor: '#4A7C59',
         backgroundColor: 'rgba(74, 124, 89, 0.12)',
         tension: 0.35,
         fill: true,
+        pointRadius: 3,
+        pointBackgroundColor: '#4A7C59',
+        pointBorderColor: '#fffdf8',
+        pointBorderWidth: 1.5,
       },
     ],
   };
@@ -1614,9 +1659,11 @@ function EscalationScreen({ state }) {
         subtitle="No commander is notified. You decide, every time."
       />
 
-      <div className="chart-card">
-        <div className="chart-caption">Your last 7 days — only you can see this.</div>
-        <Line options={chartOptions({ yLabel: false, yTicks: false, min: 0.2, max: 0.95 })} data={chartData} />
+      <div className="chart-card sentinel-chart-card">
+        <div className="chart-caption">Your last 7 days — scored out of 100, only you can see this.</div>
+        <div className="sentinel-chart-canvas">
+          <Line options={chartOptions({ yLabel: true, yTicks: true, min: 0, max: 100 })} data={chartData} />
+        </div>
       </div>
 
       <div className="escalation-options">
@@ -1988,6 +2035,180 @@ function getJournalStreak(entries) {
   }
 
   return streak;
+}
+
+// Local YYYY-MM-DD key (avoids the UTC drift of toISOString when bucketing by calendar day).
+function localKey(date) {
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, '0');
+  const day = `${date.getDate()}`.padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+// Heat level (0 = no entry, 1–4 = increasing positivity) for the contribution grid.
+function scoreLevel(score) {
+  if (score >= 75) return 4;
+  if (score >= 60) return 3;
+  if (score >= 45) return 2;
+  return 1;
+}
+
+// Builds a GitHub/NeetCode-style contribution grid: an array of week columns, each
+// holding 7 day cells (Sun→Sat), ending on the Saturday of the current week.
+function buildStreakCalendar(entries, weeks = 15) {
+  const dayScore = new Map();
+  entries.forEach((entry) => {
+    const day = entryDay(entry);
+    if (!day) return;
+    const key = localKey(new Date(day));
+    const score = Math.round(entryScore(entry) * 100);
+    dayScore.set(key, Math.max(dayScore.get(key) ?? 0, score));
+  });
+
+  const today = getToday();
+  const todayKey = localKey(today);
+  const end = new Date(today);
+  end.setDate(end.getDate() + (6 - end.getDay())); // roll forward to Saturday
+  const start = new Date(end);
+  start.setDate(start.getDate() - (weeks * 7 - 1)); // first cell is a Sunday
+
+  const columns = [];
+  for (let w = 0; w < weeks; w += 1) {
+    const days = [];
+    let monthLabel = '';
+    for (let d = 0; d < 7; d += 1) {
+      const date = new Date(start);
+      date.setDate(date.getDate() + w * 7 + d);
+      const key = localKey(date);
+      const score = dayScore.has(key) ? dayScore.get(key) : null;
+      // Label a column with the month name when its top cell starts a new month.
+      if (d === 0 && date.getDate() <= 7) {
+        monthLabel = date.toLocaleDateString('en-SG', { month: 'short' });
+      }
+      days.push({
+        key,
+        score,
+        level: score == null ? 0 : scoreLevel(score),
+        isFuture: date.getTime() > today.getTime(),
+        isToday: key === todayKey,
+      });
+    }
+    columns.push({ days, monthLabel });
+  }
+  return columns;
+}
+
+function getLongestStreak(entries) {
+  const days = [...new Set(entries.map(entryDay).filter(Boolean))]
+    .map((day) => localKey(new Date(day)))
+    .sort();
+  let best = 0;
+  let run = 0;
+  let prev = null;
+  for (const key of days) {
+    const date = new Date(key);
+    run = prev && Math.round((date - prev) / 86400000) === 1 ? run + 1 : 1;
+    best = Math.max(best, run);
+    prev = date;
+  }
+  return best;
+}
+
+// Short, supportive read-back for a single past reflection (the "comment" in the list).
+function reflectionComment(entry) {
+  const score = Math.round(entryScore(entry) * 100);
+  const dominant = entry.sentiment?.dominant || dominantFromScore(entryScore(entry));
+  if (dominant === 'crisis') {
+    return 'Crisis language was detected. Support resources were surfaced to you privately — nothing was shared.';
+  }
+  if (score >= 75) return 'Sentinel read this as a clearly positive day. Worth remembering what made it work.';
+  if (score >= 60) return 'A steady, generally upbeat entry. Your private trend held up well here.';
+  if (score >= 45) return 'A mixed, fairly neutral day. Nothing alarming in the language.';
+  if (score >= 30) return 'The tone leaned low. If several days read like this, Sentinel will quietly offer you options.';
+  return 'This reading was quite low. Be gentle with yourself — support is one tap away whenever you want it.';
+}
+
+function StreakCalendar({ entries, streakDays }) {
+  const columns = useMemo(() => buildStreakCalendar(entries, 15), [entries]);
+  const totalEntries = useMemo(
+    () => new Set(entries.map(entryDay).filter(Boolean)).size,
+    [entries],
+  );
+  const longest = useMemo(() => getLongestStreak(entries), [entries]);
+
+  return (
+    <div className="streak-card">
+      <div className="streak-head">
+        <div>
+          <p className="kicker">Journal streak</p>
+          <h3 className="streak-title">
+            <span className="streak-flame" aria-hidden>🔥</span>
+            {streakDays} day{streakDays === 1 ? '' : 's'}
+          </h3>
+        </div>
+        <div className="streak-stats">
+          <div className="streak-stat">
+            <strong>{longest}</strong>
+            <span>Longest</span>
+          </div>
+          <div className="streak-stat">
+            <strong>{totalEntries}</strong>
+            <span>Entries</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="streak-body">
+        <div className="streak-weekdays" aria-hidden>
+          <span />
+          <span>Mon</span>
+          <span />
+          <span>Wed</span>
+          <span />
+          <span>Fri</span>
+          <span />
+        </div>
+        <div className="streak-grid-wrap">
+          <div className="streak-months" aria-hidden>
+            {columns.map((col, i) => (
+              <span key={i} className="streak-month-label">
+                {col.monthLabel}
+              </span>
+            ))}
+          </div>
+          <div className="streak-grid">
+            {columns.map((col, i) => (
+              <div key={i} className="streak-col">
+                {col.days.map((cell) => (
+                  <span
+                    key={cell.key}
+                    className={`streak-cell lvl-${cell.level}${cell.isFuture ? ' is-future' : ''}${
+                      cell.isToday ? ' is-today' : ''
+                    }`}
+                    title={
+                      cell.isFuture
+                        ? ''
+                        : `${shortDate(cell.key)} · ${cell.score != null ? `${cell.score}/100` : 'No entry'}`
+                    }
+                  />
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="streak-legend" aria-hidden>
+        <span>Less</span>
+        <span className="streak-cell lvl-0" />
+        <span className="streak-cell lvl-1" />
+        <span className="streak-cell lvl-2" />
+        <span className="streak-cell lvl-3" />
+        <span className="streak-cell lvl-4" />
+        <span>More</span>
+      </div>
+    </div>
+  );
 }
 
 function getWeekendPlanner(profile, goal, attempts) {
