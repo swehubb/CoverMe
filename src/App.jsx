@@ -48,7 +48,7 @@ const STORAGE_KEY = 'cover-me-state';
 // Bump this whenever the seeded mock data below (journal, intel/wall posts, IPPT,
 // training feed, etc.) changes. On load, a saved copy with an older version is
 // dropped so the new seeds appear instead of being overridden by the stale cache.
-const SEED_VERSION = 2;
+const SEED_VERSION = 4;
 
 const defaultState = {
   __seedVersion: SEED_VERSION,
@@ -514,7 +514,7 @@ function FeedScreenContent({
   const [showCompose, setShowCompose] = useState(false);
   const [postTitle, setPostTitle] = useState('');
   const [postDraft, setPostDraft] = useState('');
-  const [postPhase, setPostPhase] = useState(wallPhases[1].value);
+  const [postPhase, setPostPhase] = useState(wallPhases[0].value);
   const [postTopic, setPostTopic] = useState(wallTopics[0]);
   const [composeError, setComposeError] = useState('');
   const [distressPrompt, setDistressPrompt] = useState(false);
