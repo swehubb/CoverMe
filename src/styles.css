@@ -2098,8 +2098,14 @@ textarea::placeholder {
   margin: 0;
 }
 
-.chat-bubble-text {
-  margin: 0 0 2px;
+.chat-bubble-body {
+  display: grid;
+  gap: 6px;
+}
+
+.chat-bubble-line {
+  margin: 0;
+  line-height: 1.55;
 }
 
 .chat-thinking {

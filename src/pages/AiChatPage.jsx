@@ -2,6 +2,25 @@ import { useRef, useState } from 'react';
 import { askChatbot } from '../services/mockChatbot';
 import { starterQuestions } from '../data';
 
+function renderChatText(text) {
+  const lines = text
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0);
+
+  return lines.map((line, i) => {
+    // Strip any **markdown** the LLM slips through
+    const parts = line.split(/\*\*(.*?)\*\*/g);
+    return (
+      <p key={i} className="chat-bubble-line">
+        {parts.map((part, j) =>
+          j % 2 === 1 ? <strong key={j}>{part}</strong> : part,
+        )}
+      </p>
+    );
+  });
+}
+
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
 async function callChatBackend(question) {
@@ -94,7 +113,7 @@ export default function AiChatPage() {
         {messages.map((message, index) => (
           <div key={`${message.role}-${index}`} className={`message-row ${message.role}`}>
             <div className={`message-bubble ${message.role}`}>
-              <p className="chat-bubble-text">{message.text}</p>
+              <div className="chat-bubble-body">{renderChatText(message.text)}</div>
               {message.role === 'assistant' && message.source && (
                 <div className="message-source">{message.source}</div>
               )}
