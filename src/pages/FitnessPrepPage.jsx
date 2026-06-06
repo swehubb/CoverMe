@@ -1,14 +1,12 @@
+import Panel from '../components/ui/Panel';
 import { preEnlistmentPlans } from '../data/mockWorkoutPlans';
 
 const COMPONENT_LABELS = {
-  pushUps: 'Push-ups',
-  sitUps: 'Sit-ups',
-  run: '2.4km Run',
-  core: 'Core',
-  recovery: 'Recovery',
+  pushUps: 'Push-ups', sitUps: 'Sit-ups', run: '2.4km Run',
+  core: 'Core', recovery: 'Recovery',
 };
 
-function formatExercise(ex) {
+function fmtEx(ex) {
   const parts = [];
   if (ex.sets && ex.sets > 1) parts.push(`${ex.sets} sets`);
   if (ex.reps) parts.push(typeof ex.reps === 'number' ? `${ex.reps} reps` : ex.reps);
@@ -18,66 +16,52 @@ function formatExercise(ex) {
 }
 
 export default function FitnessPrepPage({ state }) {
-  const profile = state.auth.profile;
-  const pesStatus = profile.pesStatus || 'B1';
+  const pes = state.auth.profile.pesStatus || 'B1';
   const goal = state.onboarding.ipptGoal || 'Pass';
-
-  const plan = preEnlistmentPlans[pesStatus] || preEnlistmentPlans['B1'];
+  const plan = preEnlistmentPlans[pes] || preEnlistmentPlans['B1'];
 
   return (
-    <section>
-      <header className="screen-header">
-        <p className="kicker">Enlist · Screen 7</p>
-        <h1>Your Pre-Enlistment Plan</h1>
-        <p>
-          Training plan calibrated to your Physical Employment Status and IPPT target. Each exercise
-          is tagged to the IPPT component it improves.
-        </p>
-        <div className="rule" />
-      </header>
-
-      <div className="badge-row">
-        <span className="info-badge">PES {pesStatus}</span>
-        <span className="info-badge">{plan.pesLabel.split('—')[0].trim()}</span>
-        <span className="info-badge">{goal} target</span>
-      </div>
+    <div style={{ height: '100%', overflow: 'auto', padding: '28px 36px' }}>
+      <div className="label" style={{ color: 'var(--accent-text)', marginBottom: 8 }}>▲ ENLIST · PRE-ENLISTMENT CONDITIONING</div>
+      <h1 className="h-display" style={{ fontSize: 52, marginBottom: 4 }}>FITNESS PREP</h1>
+      <p style={{ color: 'var(--text-dim)', marginBottom: 16 }}>
+        Plan calibrated to <span style={{ color: 'var(--amber)', fontFamily: 'var(--font-mono)' }}>{pes}</span> · target <span style={{ color: 'var(--amber)', fontFamily: 'var(--font-mono)' }}>{goal.toUpperCase()}</span>.
+        Each exercise is tagged to the IPPT station it improves.
+      </p>
 
       <div className="prep-week-grid">
-        {plan.weeklyPlan.map((day) => (
-          <article key={day.day} className="prep-day-card">
+        {plan.weeklyPlan.map((day, di) => (
+          <Panel key={di}>
             <div className="prep-day-header">
               <div>
                 <div className="prep-day-name">{day.day}</div>
                 <div className="prep-day-focus">{day.focus}</div>
               </div>
             </div>
-            <div className="prep-exercise-list">
-              {day.exercises.map((ex, index) => (
-                <div key={index} className="prep-exercise-row">
-                  <div className="prep-exercise-info">
-                    <span className="prep-exercise-name">{ex.name}</span>
-                    <span className="prep-exercise-detail">{formatExercise(ex)}</span>
+            <div>
+              {day.exercises.map((ex, ei) => (
+                <div key={ei} className="prep-exercise-row">
+                  <div>
+                    <div className="prep-exercise-name">{ex.name}</div>
+                    <div className="prep-exercise-detail">{fmtEx(ex)}</div>
                   </div>
-                  <span
-                    className={`prep-component-badge component-${ex.component}`}
-                  >
+                  <span className={`prep-badge component-${ex.component}`}>
                     {COMPONENT_LABELS[ex.component] || ex.component}
                   </span>
                 </div>
               ))}
             </div>
-          </article>
+          </Panel>
         ))}
       </div>
 
-      <div className="prep-note-card">
-        <p className="kicker">Note</p>
-        <p>
-          This plan is calibrated to your PES status. Always follow your doctor's or Medical
-          Officer's guidance if you have medical restrictions. PES C and E recruits should adjust
-          intensity accordingly.
+      <Panel flush style={{ padding: '14px 18px', marginTop: 8, background: 'var(--accent-soft)', borderColor: 'var(--accent-line)' }}>
+        <span className="label" style={{ marginBottom: 4 }}>NOTE</span>
+        <p style={{ color: 'var(--text-dim)', fontSize: 13.5, lineHeight: 1.55 }}>
+          Always follow your Medical Officer's guidance if you have medical restrictions.
+          PES C and E recruits should adjust intensity accordingly.
         </p>
-      </div>
-    </section>
+      </Panel>
+    </div>
   );
 }
