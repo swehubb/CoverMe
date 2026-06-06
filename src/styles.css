@@ -2279,8 +2279,22 @@ textarea::placeholder {
 }
 .contact-card a { font-family: var(--font-mono); font-size: 1.2rem; color: var(--accent); text-decoration: none; }
 
+/* AI sentiment trend narrative (below the journal chart) */
+.trend-narrative {
+  margin: 12px 2px 0;
+  font-size: 0.82rem;
+  font-style: italic;
+  line-height: 1.4;
+  color: var(--text-secondary);
+}
+.trend-narrative.trend-improving { color: #3f7a52; }
+.trend-narrative.trend-declining { color: var(--amber-text); }
+.trend-narrative.trend-stable { color: var(--text-secondary); }
+.trend-narrative.trend-volatile { color: #3a6ea5; }
+
 /* AI companion chat panel */
 .companion-panel { margin-top: 12px; display: grid; gap: 10px; }
+.companion-actions { display: flex; gap: 10px; flex-wrap: wrap; }
 .companion-thread {
   display: grid;
   gap: 8px;

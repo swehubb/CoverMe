@@ -28,4 +28,13 @@ export const crisisWords = [
   "jump off", "end my life", "can't go on",
 ];
 
-export default { positiveWords, negativeWords, crisisWords };
+// Unambiguous self-harm / suicidal phrasing that is never hyperbolic. These hard-
+// force the crisis path as a safety floor even when the model is unavailable.
+// Ambiguous phrases ("want to die", "can't go on", "hurt myself" — often hyperbolic
+// in Singlish) are deliberately left OUT, so the model can judge them in context.
+export const explicitCrisisWords = [
+  "kill myself", "suicide", "end my life", "cutting myself",
+  "better off dead", "self-harm", "self harm", "no reason to live",
+];
+
+export default { positiveWords, negativeWords, crisisWords, explicitCrisisWords };
