@@ -40,6 +40,11 @@ import WhatToExpectPage from './pages/WhatToExpectPage';
 import FitnessPrepPage from './pages/FitnessPrepPage';
 import AiChatPage from './pages/AiChatPage';
 import PeerIntelPage from './pages/PeerIntelPage';
+import ServeDashboard from './pages/ServeDashboard';
+import IPPTTracker from './pages/IPPTTracker';
+import PlatoonFeed from './pages/PlatoonFeed';
+import WeekendPlanner from './pages/WeekendPlanner';
+import UserProfile from './pages/UserProfile';
 
 ChartJS.register(CategoryScale, LinearScale, LineElement, PointElement, Tooltip, Filler);
 
@@ -187,6 +192,16 @@ function ModuleHomeRoute({ module, state, updateState, phase }) {
   return <HomeDashboard state={state} phase={phase} activeModule={module} />;
 }
 
+function ServeModuleWrapper({ updateState, children }) {
+  useEffect(() => {
+    updateState((current) => {
+      if (current.ui.activeModule === 'serve') return current;
+      return { ...current, ui: { ...current.ui, activeModule: 'serve' } };
+    });
+  }, [updateState]);
+  return children;
+}
+
 function AppRoutes({ state, updateState }) {
   const isReady = state.auth.isAuthenticated && state.onboarding.ipptGoal && state.onboarding.consented;
 
@@ -244,8 +259,12 @@ function AppShell({ state, updateState }) {
             />
             <Route
               path="/serve"
-              element={<ModuleHomeRoute module="serve" state={state} updateState={updateState} phase={phase} />}
+              element={<ServeModuleWrapper updateState={updateState}><ServeDashboard /></ServeModuleWrapper>}
             />
+            <Route path="/serve/ippt"     element={<IPPTTracker />} />
+            <Route path="/serve/platoon"  element={<PlatoonFeed />} />
+            <Route path="/serve/planner"  element={<WeekendPlanner />} />
+            <Route path="/serve/profile"  element={<UserProfile />} />
             <Route path="/fitness-prep" element={<FitnessPrepPage state={state} />} />
             <Route path="/ai-chat" element={<AiChatPage />} />
             <Route path="/peer-intel" element={<PeerIntelPage state={state} updateState={updateState} />} />
