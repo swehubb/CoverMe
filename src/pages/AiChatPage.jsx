@@ -1,27 +1,59 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { askChatbot } from '../services/mockChatbot';
 import { starterQuestions } from '../data';
+
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+
+async function callChatBackend(question) {
+  const response = await fetch(`${API_URL}/api/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text: question }),
+  });
+  if (!response.ok) throw new Error(`Backend ${response.status}`);
+  return response.json();
+}
 
 export default function AiChatPage() {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
+  const [loading, setLoading] = useState(false);
+  const logRef = useRef(null);
 
-  const sendMessage = (question) => {
+  const appendAssistant = (msg) => {
+    setMessages((current) => [...current, { role: 'assistant', ...msg }]);
+    setTimeout(() => {
+      logRef.current?.lastElementChild?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }, 50);
+  };
+
+  const sendMessage = async (question) => {
     const prompt = question.trim();
-    if (!prompt) return;
+    if (!prompt || loading) return;
 
-    const result = askChatbot(prompt);
-    setMessages((current) => [
-      ...current,
-      { role: 'user', text: prompt },
-      {
-        role: 'assistant',
+    setMessages((current) => [...current, { role: 'user', text: prompt }]);
+    setInput('');
+    setLoading(true);
+
+    try {
+      const result = await callChatBackend(prompt);
+      appendAssistant({
         text: result.answer,
         source: result.source,
         matched: result.matched,
-      },
-    ]);
-    setInput('');
+      });
+    } catch {
+      // Backend unavailable — fall back to local mock
+      const fallback = askChatbot(prompt);
+      appendAssistant({
+        text: fallback.answer,
+        source: fallback.source,
+        matched: fallback.matched,
+        isFallback: true,
+      });
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleKeyDown = (event) => {
@@ -37,7 +69,8 @@ export default function AiChatPage() {
         <p className="kicker">Enlist · Screen 8</p>
         <h1>Ask Anything</h1>
         <p className="chat-source-note">
-          All answers sourced exclusively from verified SAF documentation.
+          Answers sourced exclusively from verified SAF documentation — ns.sg and mindef.gov.sg.
+          Questions outside the knowledge base will be flagged.
         </p>
         <div className="rule" />
       </header>
@@ -57,22 +90,29 @@ export default function AiChatPage() {
         </div>
       )}
 
-      <div className="chat-log">
+      <div className="chat-log" ref={logRef}>
         {messages.map((message, index) => (
           <div key={`${message.role}-${index}`} className={`message-row ${message.role}`}>
             <div className={`message-bubble ${message.role}`}>
-              {message.text}
+              <p className="chat-bubble-text">{message.text}</p>
               {message.role === 'assistant' && message.source && (
-                <div className="message-source">Source: {message.source}</div>
+                <div className="message-source">{message.source}</div>
               )}
-              {message.role === 'assistant' && !message.matched && (
+              {message.role === 'assistant' && message.matched === false && !message.isFallback && (
                 <div className="message-source fallback">
-                  This query is outside the verified knowledge base.
+                  Outside verified knowledge base — visit ns.sg for official guidance.
                 </div>
               )}
             </div>
           </div>
         ))}
+        {loading && (
+          <div className="message-row assistant">
+            <div className="message-bubble assistant chat-thinking">
+              Retrieving from SAF documentation…
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="chat-input-bar">
@@ -81,9 +121,14 @@ export default function AiChatPage() {
           onChange={(event) => setInput(event.target.value)}
           onKeyDown={handleKeyDown}
           placeholder="Ask about enlistment, admin, training, or medical processes"
+          disabled={loading}
         />
-        <button className="primary-button small" onClick={() => sendMessage(input)}>
-          Send
+        <button
+          className="primary-button small"
+          onClick={() => sendMessage(input)}
+          disabled={loading || !input.trim()}
+        >
+          {loading ? '…' : 'Send'}
         </button>
       </div>
     </section>

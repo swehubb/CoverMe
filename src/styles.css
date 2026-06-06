@@ -2098,6 +2098,21 @@ textarea::placeholder {
   margin: 0;
 }
 
+.chat-bubble-text {
+  margin: 0 0 2px;
+}
+
+.chat-thinking {
+  opacity: 0.6;
+  font-style: italic;
+  animation: chat-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes chat-pulse {
+  0%, 100% { opacity: 0.6; }
+  50%       { opacity: 1; }
+}
+
 .message-source {
   margin-top: 8px;
   padding-top: 8px;
