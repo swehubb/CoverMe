@@ -61,6 +61,10 @@ a { color:inherit; text-decoration:none; }
 .cmd-nav-btn.active .cmd-nav-label { color:var(--text); }
 .cmd-signout { all:unset; cursor:pointer; width:40px; height:40px; border-radius:8px; display:grid; place-items:center; color:var(--text-faint); border:1px solid var(--border); font-size:14px; transition:all 0.15s; }
 .cmd-signout:hover { border-color:var(--border-strong); color:var(--text-dim); }
+.cmd-module-toggle { display:flex; flex-direction:column; gap:4px; margin-bottom:12px; }
+.cmd-module-btn { all:unset; cursor:pointer; width:40px; height:22px; border-radius:4px; display:grid; place-items:center; font-family:var(--font-head); font-weight:700; font-size:8.5px; letter-spacing:0.1em; color:var(--text-faint); border:1px solid var(--border); transition:all 0.15s; }
+.cmd-module-btn:hover:not(.active) { border-color:var(--border-strong); color:var(--text-dim); }
+.cmd-module-btn.active { background:var(--accent-soft); border-color:var(--accent-line); color:var(--accent-text); }
 
 /* Top Bar */
 .top-bar { height:var(--topbar-h); border-bottom:1px solid var(--border); background:var(--surface); display:flex; align-items:center; justify-content:space-between; padding:0 24px; z-index:9; flex-shrink:0; }
@@ -365,6 +369,7 @@ select.inp { cursor:pointer; appearance:none; background-image:url("data:image/s
 .feed-thread-meta { display:flex; gap:12px; align-items:center; margin-top:10px; padding-top:10px; border-top:1px solid var(--border); }
 .thread-stat,.thread-vote { all:unset; cursor:pointer; font-family:var(--font-mono); font-size:12px; color:var(--text-faint); transition:color 0.15s; }
 .thread-stat:hover,.thread-vote:hover { color:var(--text-dim); }
+.thread-vote.vote-active { color:var(--accent-text); }
 .reply-count { font-family:var(--font-mono); font-size:11px; color:var(--text-faint); margin-left:auto; }
 .reply-thread { margin-top:12px; padding-top:12px; border-top:1px solid var(--border); }
 .reply-list { display:flex; flex-direction:column; gap:8px; margin-bottom:10px; }
