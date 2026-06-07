@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -14,6 +14,7 @@ import {
   Navigate,
   Route,
   Routes,
+  useLocation,
   useNavigate,
   useSearchParams,
 } from 'react-router-dom';
@@ -95,6 +96,7 @@ const defaultState = {
   },
   social: {
     trainingFeed: trainingActivity,
+    trainingFeedPosts: trainingActivity,
   },
   ui: {
     activeModule: '',
@@ -296,6 +298,7 @@ function AppShell({ state, updateState }) {
               element={<TrainScreen state={state} updateState={updateState} activeModule={activeModule} />}
             />
             <Route path="/weekend-planner" element={<WeekendPlannerScreen state={state} activeModule={activeModule} />} />
+            <Route path="/training-feed" element={<TrainingFeedScreen state={state} updateState={updateState} />} />
             <Route
               path="/profile"
               element={
@@ -365,6 +368,11 @@ function HomeDashboard({ state, phase, activeModule }) {
               title: 'IPPT Tracker',
               body: 'Log attempts, set goals, and follow an adaptive training roadmap with clear benchmarks.',
               to: '/train',
+            },
+            {
+              title: 'Training Feed',
+              body: 'Post IPPT results and training milestones. React and reply to your platoon mates.',
+              to: '/training-feed',
             },
             {
               title: 'Sentinel',
@@ -447,7 +455,6 @@ function HomeDashboard({ state, phase, activeModule }) {
             <Panel ticks className="feat-card-inner" style={{ gap: 0 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 18 }}>
                 <span style={{ fontSize: 24, color: 'var(--accent-text)' }}>▲</span>
-                <span className="mono-dim">{block.title.slice(0, 6).toUpperCase()}</span>
               </div>
               <div style={{ marginTop: 'auto' }}>
                 <div className="h-title" style={{ fontSize: 20, marginBottom: 6 }}>{block.title.toUpperCase()}</div>
@@ -991,12 +998,97 @@ function BuddyTapScreen({ state, updateState }) {
   );
 }
 
+function todayIso() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+const BLANK_FORM = () => ({ pushups: '', situps: '', runMins: '', runSecs: '', date: todayIso() });
+
+function AttemptForm({ form, setForm }) {
+  const dateRef = useRef(null);
+  const clampSecs = (v) => String(Math.min(59, Math.max(0, parseInt(v) || 0))).padStart(2, '0');
+
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '18px 20px' }}>
+      {[
+        { label: 'PUSH-UPS', field: 'pushups', type: 'number', min: 0 },
+        { label: 'SIT-UPS',  field: 'situps',  type: 'number', min: 0 },
+      ].map(({ label, field, type, min }) => (
+        <div key={field}>
+          <div className="label" style={{ fontSize: 10, marginBottom: 6 }}>{label}</div>
+          <input
+            type={type}
+            min={min}
+            value={form[field]}
+            onChange={(e) => setForm({ ...form, [field]: e.target.value })}
+            style={{ width: '100%' }}
+            placeholder="—"
+          />
+        </div>
+      ))}
+      <div>
+        <div className="label" style={{ fontSize: 10, marginBottom: 6 }}>2.4KM RUN TIME</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <input
+            type="number" min="0" max="30"
+            value={form.runMins}
+            onChange={(e) => setForm({ ...form, runMins: e.target.value })}
+            style={{ width: '100%', textAlign: 'center' }}
+            placeholder="MM"
+          />
+          <span className="mono" style={{ color: 'var(--text-dim)', fontWeight: 700, fontSize: 18 }}>:</span>
+          <input
+            type="number" min="0" max="59"
+            value={form.runSecs}
+            onBlur={(e) => setForm({ ...form, runSecs: clampSecs(e.target.value) })}
+            onChange={(e) => setForm({ ...form, runSecs: e.target.value })}
+            style={{ width: '100%', textAlign: 'center' }}
+            placeholder="SS"
+          />
+        </div>
+        <div className="mono-dim" style={{ fontSize: 9, marginTop: 4 }}>MM : SS</div>
+      </div>
+      <div>
+        <div className="label" style={{ fontSize: 10, marginBottom: 6 }}>DATE</div>
+        <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+          <input
+            ref={dateRef}
+            type="date"
+            value={form.date}
+            onChange={(e) => setForm({ ...form, date: e.target.value })}
+            style={{ width: '100%', paddingRight: 36 }}
+          />
+          <button
+            type="button"
+            onClick={() => { try { dateRef.current?.showPicker(); } catch { dateRef.current?.click(); } }}
+            style={{
+              position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)',
+              background: 'none', border: 'none', cursor: 'pointer', padding: 0,
+              color: 'var(--text-dim)', fontSize: 16, lineHeight: 1,
+            }}
+            title="Open calendar"
+          >
+            📅
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function TrainScreen({ state, updateState }) {
-  const [showModal, setShowModal] = useState(false);
-  const [form, setForm] = useState({ pushups: '', situps: '', runTime: '12:30', date: isoDate(getToday()) });
+  const navigate = useNavigate();
+  const [showModal, setShowModal]     = useState(false);
+  const [form, setForm]               = useState(BLANK_FORM());
+  const [editIdx, setEditIdx]         = useState(null);
+  const [editForm, setEditForm]       = useState(null);
+  const [highlightedAttempt, setHighlightedAttempt] = useState(null);
+  const [pbModal, setPbModal]         = useState(null);
+  const historyRef = useRef(null);
 
   const attempts = state.ippt.attempts;
-  const latest = attempts.length ? attempts[attempts.length - 1] : null;
+  const latest   = attempts.length ? attempts[attempts.length - 1] : null;
 
   const latestScore = latest
     ? calculateIpptScore(latest.pushups, latest.situps, latest.runSeconds)
@@ -1010,48 +1102,136 @@ function TrainScreen({ state, updateState }) {
       }
     : null;
 
-  const GOAL_MAP = { Gold: 85, Silver: 75, 'Pass with Incentive': 61, Pass: 61 };
+  const GOAL_MAP  = { Gold: 85, Silver: 75, 'Pass with Incentive': 61, Pass: 61 };
   const goalName  = state.onboarding.ipptGoal || 'Pass';
   const goalScore = GOAL_MAP[goalName] ?? 61;
+
+  const pbs     = attempts.length ? getPbs(attempts) : null;
+  const profile = state.auth.profile;
+
+  const feed = state.social?.trainingFeed ?? trainingActivity ?? [];
+
+  const handleChartDotClick = (chartIdx) => {
+    setHighlightedAttempt(chartIdx);
+    historyRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    setTimeout(() => setHighlightedAttempt(null), 2000);
+  };
 
   const chartSeries = attempts.map((a) => ({
     v:     calculateIpptScore(a.pushups, a.situps, a.runSeconds).score,
     label: shortDate(a.date),
   }));
 
+  const formToSeconds = (f) => (parseInt(f.runMins) || 0) * 60 + (parseInt(f.runSecs) || 0);
+
   const submitAttempt = () => {
-    const runSeconds = toSeconds(form.runTime);
+    const runSeconds = formToSeconds(form);
     if (!form.pushups || !form.situps || !runSeconds) return;
+    const pushups = Number(form.pushups);
+    const situps  = Number(form.situps);
+    const newAttempt = { date: form.date, pushups, situps, runSeconds };
 
-    updateState((current) => ({
-      ...current,
-      ippt: {
-        attempts: [
-          ...current.ippt.attempts,
-          { date: form.date, pushups: Number(form.pushups), situps: Number(form.situps), runSeconds },
-        ],
-      },
+    // Detect new personal bests before state update
+    const newPbs = [];
+    if (!attempts.length || pushups > (pbs?.pushups ?? 0))
+      newPbs.push({ exercise: 'Push-ups', value: `${pushups} reps` });
+    if (!attempts.length || situps > (pbs?.situps ?? 0))
+      newPbs.push({ exercise: 'Sit-ups', value: `${situps} reps` });
+    if (!attempts.length || runSeconds < (pbs?.runSeconds ?? 99999))
+      newPbs.push({ exercise: '2.4km Run', value: formatRunTime(runSeconds) });
+
+    updateState((c) => ({
+      ...c,
+      ippt: { ...c.ippt, attempts: [...c.ippt.attempts, newAttempt] },
     }));
-
     setShowModal(false);
+    setForm(BLANK_FORM());
+
+    if (newPbs.length > 0) {
+      setPbModal({ newPbs, newAttemptIdx: attempts.length });
+    }
+  };
+
+  const openEdit = (originalIdx) => {
+    const a = attempts[originalIdx];
+    const totalSecs = a.runSeconds;
+    setEditIdx(originalIdx);
+    setEditForm({
+      pushups: String(a.pushups),
+      situps:  String(a.situps),
+      runMins: String(Math.floor(totalSecs / 60)),
+      runSecs: String(totalSecs % 60).padStart(2, '0'),
+      date:    a.date,
+    });
+  };
+
+  const saveEdit = () => {
+    const runSeconds = formToSeconds(editForm);
+    if (!editForm.pushups || !editForm.situps || !runSeconds) return;
+    updateState((c) => {
+      const updated = [...c.ippt.attempts];
+      updated[editIdx] = { date: editForm.date, pushups: Number(editForm.pushups), situps: Number(editForm.situps), runSeconds };
+      return { ...c, ippt: { ...c.ippt, attempts: updated } };
+    });
+    setEditIdx(null);
+    setEditForm(null);
+  };
+
+  const deleteAttempt = (originalIdx) => {
+    updateState((c) => {
+      const updated = c.ippt.attempts.filter((_, i) => i !== originalIdx);
+      return { ...c, ippt: { ...c.ippt, attempts: updated } };
+    });
+    setEditIdx(null);
+    setEditForm(null);
   };
 
   const stationRows = [
-    { label: 'PUSH-UPS',   val: latest?.pushups,                             pts: stationPts?.pushups, max: 25 },
-    { label: 'SIT-UPS',    val: latest?.situps,                              pts: stationPts?.situps,  max: 25 },
-    { label: '2.4KM RUN',  val: latest ? formatRunTime(latest.runSeconds) : null, pts: stationPts?.run, max: 50 },
+    { label: 'PUSH-UPS',  val: latest?.pushups,                                  pts: stationPts?.pushups, max: 25 },
+    { label: 'SIT-UPS',   val: latest?.situps,                                   pts: stationPts?.situps,  max: 25 },
+    { label: '2.4KM RUN', val: latest ? formatRunTime(latest.runSeconds) : null,  pts: stationPts?.run,     max: 50 },
   ];
+
+  const goalColors = { Gold: 'var(--amber)', Silver: '#9ca3af', 'Pass with Incentive': 'var(--accent-text)', Pass: 'var(--accent-text)' };
+  const goalColor  = goalColors[goalName] || 'var(--accent-text)';
 
   return (
     <div style={{ height: '100%', overflow: 'auto', padding: '28px 36px' }}>
       <span className="label" style={{ color: 'var(--accent-text)', marginBottom: 8, display: 'block' }}>
         ▲ SERVE · IPPT TRACKER
       </span>
-      <h1 className="h-display" style={{ fontSize: 52, marginBottom: 24 }}>IPPT TRACKER</h1>
+      <h1 className="h-display" style={{ fontSize: 52, marginBottom: 10 }}>IPPT TRACKER</h1>
+
+      {/* GOAL SUB-HEADER */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 28, paddingBottom: 20, borderBottom: '1px solid var(--border)' }}>
+        <span className="mono-dim" style={{ fontSize: 12 }}>CURRENT TARGET</span>
+        <span style={{ width: 1, height: 14, background: 'var(--border)' }} />
+        <span style={{ fontFamily: 'var(--font-head)', fontWeight: 800, fontSize: 18, color: goalColor, letterSpacing: '0.04em' }}>
+          {goalName.toUpperCase()}
+        </span>
+        <span className="mono-dim" style={{ fontSize: 11 }}>{goalScore} PTS</span>
+      </div>
+
+      {/* PERSONAL BESTS */}
+      <Panel ticks style={{ padding: 26, marginBottom: 16 }}>
+        <span className="label" style={{ marginBottom: 18, display: 'block' }}>▲ PERSONAL BESTS · ALL TIME</span>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 0 }}>
+          {[
+            { label: 'PUSH-UPS',  value: pbs ? pbs.pushups              : '—', unit: 'REPS',  color: 'var(--accent-text)' },
+            { label: 'SIT-UPS',   value: pbs ? pbs.situps               : '—', unit: 'REPS',  color: 'var(--accent-text)' },
+            { label: '2.4KM RUN', value: pbs ? formatRunTime(pbs.runSeconds) : '—', unit: 'MM:SS', color: 'var(--amber)' },
+          ].map(({ label, value, unit, color }, i, arr) => (
+            <div key={label} style={{ textAlign: 'center', padding: '8px 16px', borderRight: i < arr.length - 1 ? '1px solid var(--border)' : 'none' }}>
+              <div style={{ fontFamily: 'var(--font-head)', fontWeight: 900, fontSize: 64, lineHeight: 1, color, marginBottom: 10 }}>{value}</div>
+              <div className="label" style={{ marginBottom: 2 }}>{label}</div>
+              <div className="mono-dim" style={{ fontSize: 9 }}>{unit}</div>
+            </div>
+          ))}
+        </div>
+      </Panel>
 
       {/* Row 1: 2-column overview */}
       <div style={{ display: 'grid', gridTemplateColumns: '1.1fr 1.4fr', gap: 16, marginBottom: 16 }}>
-        {/* CURRENT STANDING */}
         <Panel ticks style={{ padding: 26 }}>
           <span className="label" style={{ marginBottom: 18, display: 'block' }}>▲ CURRENT STANDING</span>
           <div style={{ fontFamily: 'var(--font-head)', fontWeight: 900, fontSize: 76, lineHeight: 1, color: 'var(--amber)', marginBottom: 14 }}>
@@ -1064,13 +1244,7 @@ function TrainScreen({ state, updateState }) {
               <span className="mono-dim">{goalScore} PTS</span>
             </div>
             <div style={{ height: 6, background: 'var(--bg)', borderRadius: 3, overflow: 'hidden' }}>
-              <div style={{
-                width: `${Math.min(100, ((latestScore?.score ?? 0) / goalScore) * 100)}%`,
-                height: '100%',
-                background: 'var(--amber)',
-                borderRadius: 3,
-                transition: 'width 0.4s ease',
-              }} />
+              <div style={{ width: `${Math.min(100, ((latestScore?.score ?? 0) / goalScore) * 100)}%`, height: '100%', background: 'var(--amber)', borderRadius: 3, transition: 'width 0.4s ease' }} />
             </div>
             <div className="mono-dim" style={{ marginTop: 6, textAlign: 'right', fontSize: 10 }}>
               {latestScore ? `${latestScore.score} / ${goalScore}` : `0 / ${goalScore}`}
@@ -1078,27 +1252,19 @@ function TrainScreen({ state, updateState }) {
           </div>
         </Panel>
 
-        {/* STATION BREAKDOWN */}
         <Panel ticks style={{ padding: 26 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
             <span className="label">▲ STATION BREAKDOWN · LATEST</span>
-            <button className="btn ghost sm" onClick={() => setShowModal(true)}>LOG ATTEMPT</button>
+            <button className="btn ghost sm" onClick={() => { setForm(BLANK_FORM()); setShowModal(true); }}>LOG ATTEMPT</button>
           </div>
           {stationRows.map((s) => (
             <div key={s.label} style={{ marginBottom: 18 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 5 }}>
                 <span className="label" style={{ fontSize: 10 }}>{s.label}</span>
-                <span style={{ fontFamily: 'var(--font-mono)', fontSize: 22, color: 'var(--amber)', fontVariantNumeric: 'tabular-nums' }}>
-                  {s.val ?? '—'}
-                </span>
+                <span style={{ fontFamily: 'var(--font-mono)', fontSize: 22, color: 'var(--amber)', fontVariantNumeric: 'tabular-nums' }}>{s.val ?? '—'}</span>
               </div>
               <div style={{ height: 4, background: 'var(--bg)', borderRadius: 2, overflow: 'hidden' }}>
-                <div style={{
-                  width: `${s.pts != null ? (s.pts / s.max) * 100 : 0}%`,
-                  height: '100%',
-                  background: 'var(--amber)',
-                  borderRadius: 2,
-                }} />
+                <div style={{ width: `${s.pts != null ? (s.pts / s.max) * 100 : 0}%`, height: '100%', background: 'var(--amber)', borderRadius: 2 }} />
               </div>
               <div className="mono-dim" style={{ fontSize: 10, marginTop: 3 }}>
                 {s.pts != null ? `${s.pts} / ${s.max} PTS` : '—'}
@@ -1108,7 +1274,7 @@ function TrainScreen({ state, updateState }) {
         </Panel>
       </div>
 
-      {/* SCORE PROGRESSION chart */}
+      {/* SCORE PROGRESSION */}
       <Panel ticks style={{ padding: 26, marginBottom: 16 }}>
         <span className="label" style={{ marginBottom: 16, display: 'block' }}>▲ SCORE PROGRESSION</span>
         {chartSeries.length > 0 ? (
@@ -1120,8 +1286,10 @@ function TrainScreen({ state, updateState }) {
               yMin={0}
               height={200}
               goal={goalScore}
+              goalLabel={`Goal: ${goalName} (${goalScore})`}
               color="var(--amber)"
               fmt={(v) => String(Math.round(v))}
+              onDotClick={handleChartDotClick}
             />
             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 28px 0' }}>
               {chartSeries.map((d) => (
@@ -1136,120 +1304,659 @@ function TrainScreen({ state, updateState }) {
         )}
       </Panel>
 
-      {/* ATTEMPT HISTORY */}
-      <Panel ticks style={{ padding: 26 }}>
-        <span className="label" style={{ marginBottom: 16, display: 'block' }}>▲ ATTEMPT HISTORY</span>
-        {attempts.length > 0 ? (
-          <>
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: '110px repeat(3, 1fr) 70px 100px',
-              padding: '0 0 8px',
-              borderBottom: '1px solid var(--border)',
-            }}>
-              {['DATE', 'PUSH-UPS', 'SIT-UPS', '2.4KM', 'PTS', 'AWARD'].map((h) => (
-                <span key={h} className="label" style={{ fontSize: 10 }}>{h}</span>
-              ))}
-            </div>
-            {[...attempts].reverse().map((attempt, i) => {
-              const sc = calculateIpptScore(attempt.pushups, attempt.situps, attempt.runSeconds);
-              return (
-                <div key={i} style={{
-                  display: 'grid',
-                  gridTemplateColumns: '110px repeat(3, 1fr) 70px 100px',
-                  padding: '11px 0',
-                  borderBottom: '1px solid var(--border)',
-                  alignItems: 'center',
-                }}>
-                  <span className="mono-dim">{shortDate(attempt.date)}</span>
-                  <span className="mono">{attempt.pushups}</span>
-                  <span className="mono">{attempt.situps}</span>
-                  <span className="mono">{formatRunTime(attempt.runSeconds)}</span>
-                  <span className="mono" style={{ color: 'var(--amber)', fontWeight: 700 }}>{sc.score}</span>
-                  <Award award={sc.award} />
-                </div>
-              );
-            })}
-          </>
-        ) : (
-          <div className="mono-dim" style={{ padding: '20px 0', textAlign: 'center' }}>
-            No attempts logged yet.
+      {/* WEEKEND PLANNER CTA */}
+      <Panel elevated style={{ padding: 24, marginBottom: 16, borderColor: 'var(--accent-line)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
+          <span style={{ fontSize: 36, lineHeight: 1 }}>🗓</span>
+          <div style={{ flex: 1 }}>
+            <div className="label" style={{ color: 'var(--accent-text)', marginBottom: 6 }}>▲ AI-CURATED TRAINING</div>
+            <div className="h-title" style={{ fontSize: 17, marginBottom: 5 }}>Weekend Planner / Vocation-Based Training Plan</div>
+            <p style={{ color: 'var(--text-dim)', fontSize: 13, margin: 0 }}>
+              Personalised for your attempt history, PES {profile.pesStatus},{' '}
+              {(profile.vocation || 'General').toUpperCase()} vocation, and {goalName} target.
+            </p>
           </div>
-        )}
+          <button className="btn" style={{ flexShrink: 0, padding: '10px 18px' }} onClick={() => navigate('/weekend-planner')}>
+            OPEN PLAN →
+          </button>
+        </div>
       </Panel>
 
+      {/* ATTEMPT HISTORY */}
+      <div ref={historyRef}>
+        <Panel ticks style={{ padding: 26, marginBottom: 16 }}>
+          <span className="label" style={{ marginBottom: 16, display: 'block' }}>▲ ATTEMPT HISTORY</span>
+          {attempts.length > 0 ? (
+            <>
+              <div style={{ display: 'grid', gridTemplateColumns: '110px repeat(3, 1fr) 70px 1fr 36px', padding: '0 0 8px', borderBottom: '1px solid var(--border)' }}>
+                {['DATE', 'PUSH-UPS', 'SIT-UPS', '2.4KM', 'PTS', 'AWARD', ''].map((h) => (
+                  <span key={h} className="label" style={{ fontSize: 10 }}>{h}</span>
+                ))}
+              </div>
+              {[...attempts].reverse().map((attempt, reversedI) => {
+                const sc          = calculateIpptScore(attempt.pushups, attempt.situps, attempt.runSeconds);
+                const originalIdx = attempts.length - 1 - reversedI;
+                const isHighlighted = highlightedAttempt === originalIdx;
+                return (
+                  <div key={reversedI} className={isHighlighted ? 'attempt-glow' : ''} style={{
+                    display: 'grid',
+                    gridTemplateColumns: '110px repeat(3, 1fr) 70px 1fr 36px',
+                    padding: '11px 0',
+                    borderBottom: '1px solid var(--border)',
+                    alignItems: 'center',
+                    borderRadius: 4,
+                    transition: 'background 0.3s',
+                  }}>
+                    <span className="mono-dim">{shortDate(attempt.date)}</span>
+                    <span className="mono">{attempt.pushups}</span>
+                    <span className="mono">{attempt.situps}</span>
+                    <span className="mono">{formatRunTime(attempt.runSeconds)}</span>
+                    <span className="mono" style={{ color: 'var(--amber)', fontWeight: 700 }}>{sc.score}</span>
+                    <Award award={sc.award} />
+                    <button
+                      onClick={() => openEdit(originalIdx)}
+                      title="Edit attempt"
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-faint)', padding: 0, fontSize: 13, lineHeight: 1 }}
+                    >
+                      ✎
+                    </button>
+                  </div>
+                );
+              })}
+            </>
+          ) : (
+            <div className="mono-dim" style={{ padding: '20px 0', textAlign: 'center' }}>No attempts logged yet.</div>
+          )}
+        </Panel>
+      </div>
+
+      {/* TRAINING FEED */}
+      {feed.length > 0 && (
+        <Panel ticks style={{ padding: 26, cursor: 'pointer' }} onClick={() => navigate('/training-feed')}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+            <span className="label">▲ TRAINING FEED · UNIT ACTIVITY</span>
+            <span className="mono-dim" style={{ fontSize: 10 }}>VIEW ALL →</span>
+          </div>
+          {feed.map((item) => (
+            <div key={item.id} style={{ display: 'flex', gap: 14, padding: '12px 0', borderBottom: '1px solid var(--border)', alignItems: 'flex-start' }}>
+              <div style={{ width: 32, height: 32, borderRadius: 4, background: 'var(--accent-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <span style={{ fontSize: 14, color: 'var(--accent-text)' }}>▲</span>
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
+                  <span className="mono" style={{ fontSize: 13 }}>{item.name}</span>
+                  <span className="mono-dim" style={{ fontSize: 10 }}>{item.recency}</span>
+                </div>
+                <div style={{ marginBottom: 3 }}>
+                  {(item.chips || []).map((c) => (
+                    <span key={c} className="info-badge" style={{ marginRight: 4, fontSize: 10 }}>{c}</span>
+                  ))}
+                </div>
+                <span style={{ color: 'var(--text-dim)', fontSize: 13 }}>{item.detail}</span>
+              </div>
+              <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                <div style={{ fontFamily: 'var(--font-head)', fontWeight: 800, fontSize: 20, color: 'var(--amber)' }}>{item.statline}</div>
+              </div>
+            </div>
+          ))}
+        </Panel>
+      )}
+
+      {/* LOG ATTEMPT MODAL */}
       {showModal && (
         <Modal title="Log IPPT Attempt" onClose={() => setShowModal(false)}>
-          <div className="modal-grid">
-            <input
-              type="number"
-              placeholder="Push-up reps"
-              value={form.pushups}
-              onChange={(event) => setForm({ ...form, pushups: event.target.value })}
-            />
-            <input
-              type="number"
-              placeholder="Sit-up reps"
-              value={form.situps}
-              onChange={(event) => setForm({ ...form, situps: event.target.value })}
-            />
-            <input
-              type="text"
-              placeholder="2.4km MM:SS"
-              value={form.runTime}
-              onChange={(event) => setForm({ ...form, runTime: event.target.value })}
-            />
-            <input type="date" value={form.date} onChange={(event) => setForm({ ...form, date: event.target.value })} />
-          </div>
-          <button className="primary-button" onClick={submitAttempt}>
-            Save attempt
+          <AttemptForm form={form} setForm={setForm} />
+          <button className="primary-button" style={{ marginTop: 20, width: '100%' }} onClick={submitAttempt}>
+            SAVE ATTEMPT
           </button>
+        </Modal>
+      )}
+
+      {/* EDIT ATTEMPT MODAL */}
+      {editIdx !== null && editForm && (
+        <Modal title="Edit Attempt" onClose={() => { setEditIdx(null); setEditForm(null); }}>
+          <AttemptForm form={editForm} setForm={setEditForm} />
+          <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
+            <button className="primary-button" style={{ flex: 1 }} onClick={saveEdit}>SAVE CHANGES</button>
+            <button
+              onClick={() => deleteAttempt(editIdx)}
+              style={{ padding: '10px 18px', background: 'none', border: '1px solid #7f1d1d', color: '#f87171', borderRadius: 4, cursor: 'pointer', fontFamily: 'var(--font-mono)', fontSize: 12, letterSpacing: '0.06em' }}
+            >
+              DELETE
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {/* PERSONAL BEST CELEBRATION MODAL */}
+      {pbModal && (
+        <Modal title="New Personal Best 🏆" onClose={() => setPbModal(null)}>
+          <p style={{ color: 'var(--text-dim)', fontSize: 14, marginBottom: 18 }}>
+            You just broke your personal record. Share it with your unit on the Training Feed.
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 24 }}>
+            {pbModal.newPbs.map(({ exercise, value }) => (
+              <div key={exercise} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', borderRadius: 6, background: 'var(--accent-soft)', border: '1px solid var(--accent-line)' }}>
+                <span className="label" style={{ fontSize: 12, color: 'var(--accent-text)' }}>{exercise}</span>
+                <span style={{ fontFamily: 'var(--font-head)', fontWeight: 800, fontSize: 22, color: 'var(--amber)' }}>{value}</span>
+              </div>
+            ))}
+          </div>
+          <div style={{ display: 'flex', gap: 10 }}>
+            <button
+              className="primary-button"
+              style={{ flex: 1 }}
+              onClick={() => {
+                setPbModal(null);
+                navigate('/training-feed', { state: { autoCompose: true, attemptIdx: pbModal.newAttemptIdx } });
+              }}
+            >
+              SHARE TO TRAINING FEED
+            </button>
+            <button
+              onClick={() => setPbModal(null)}
+              style={{ padding: '10px 18px', background: 'none', border: '1px solid var(--border)', color: 'var(--text-dim)', borderRadius: 4, cursor: 'pointer', fontFamily: 'var(--font-mono)', fontSize: 12, letterSpacing: '0.06em' }}
+            >
+              DISMISS
+            </button>
+          </div>
         </Modal>
       )}
     </div>
   );
 }
 
-function WeekendPlannerScreen({ state, activeModule }) {
-  const profile = state.auth.profile;
-  const weekendPlanner = getWeekendPlanner(profile, state.onboarding.ipptGoal, state.ippt.attempts);
+// ─── TRAINING FEED ───────────────────────────────────────────────────────────
+
+const FEELINGS = [
+  { emoji: '🏆', label: 'Proud'     },
+  { emoji: '💪', label: 'Motivated' },
+  { emoji: '😊', label: 'Happy'     },
+  { emoji: '🔥', label: 'On Fire'   },
+  { emoji: '🎯', label: 'Focused'   },
+  { emoji: '😮‍💨', label: 'Relieved'  },
+  { emoji: '😤', label: 'Exhausted' },
+  { emoji: '😐', label: 'Neutral'   },
+];
+
+const REACTIONS = [
+  { key: 'cheer',   emoji: '💪' },
+  { key: 'fire',    emoji: '🔥' },
+  { key: 'respect', emoji: '🫡' },
+];
+
+function FeedPostCard({ post, onReact, onAddReply }) {
+  const [repliesOpen, setRepliesOpen] = useState(false);
+  const [replyText, setReplyText]     = useState('');
+  const [replyError, setReplyError]   = useState('');
+  const [submitting, setSubmitting]   = useState(false);
+
+  const handleReply = async () => {
+    const text = replyText.trim();
+    if (!text) return;
+    setSubmitting(true);
+    const result = await nlpService.moderate(text);
+    if (!result.approved) {
+      setReplyError(result.reason || 'Please keep your comment kind and constructive.');
+      setSubmitting(false);
+      return;
+    }
+    onAddReply(post.id, text);
+    setReplyText('');
+    setReplyError('');
+    setSubmitting(false);
+  };
 
   return (
-    <section>
-      <ScreenHeader
-        title="Weekend IPPT Planner"
-        subtitle={
-          activeModule === 'serve'
-            ? 'A dedicated two-day workout block based on your current IPPT band and service vocation.'
-            : 'A dedicated two-day workout block based on your current IPPT band and target.'
-        }
-      />
-      <div className="badge-row">
-        <span className="info-badge">PES {profile.pesStatus}</span>
-        <span className="info-badge">{profile.vocation}</span>
-        <span className="info-badge">{state.onboarding.ipptGoal}</span>
-      </div>
-      <div className="weekend-planner-card static">
-        <div className="weekend-planner-topline">
-          <div>
-            <p className="kicker">This Weekend</p>
-            <h3>IPPT/Vocation-Based Weekend Plan</h3>
+    <Panel ticks style={{ padding: 24 }}>
+      {/* Author row */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+          <div style={{ width: 38, height: 38, borderRadius: 6, background: 'var(--accent-soft)', display: 'grid', placeItems: 'center', color: 'var(--accent-text)', fontFamily: 'var(--font-head)', fontWeight: 800, fontSize: 16, flexShrink: 0 }}>
+            {(post.name || 'U')[0].toUpperCase()}
           </div>
-          <span className="info-badge">{profile.vocation}</span>
+          <div>
+            <div className="mono" style={{ fontSize: 14, fontWeight: 700 }}>{post.name}</div>
+            <div className="mono-dim" style={{ fontSize: 11 }}>{post.unit} · {post.recency}</div>
+          </div>
         </div>
-        <p className="weekend-planner-summary">{weekendPlanner.summary}</p>
-        <div className="horizontal-days weekend-days">
-          {weekendPlanner.days.map((day) => (
-            <article key={day.id} className="day-card">
-              <div className="day-card-header">
-                <span>{day.label}</span>
-                <strong>{day.duration}</strong>
-              </div>
-              <p>{day.workout}</p>
-            </article>
+        {post.statline && (
+          <div style={{ fontFamily: 'var(--font-head)', fontWeight: 800, fontSize: 24, color: 'var(--amber)', lineHeight: 1 }}>
+            {post.statline}
+          </div>
+        )}
+      </div>
+
+      {/* Chips */}
+      {post.chips?.length > 0 && (
+        <div className="badge-row" style={{ marginBottom: 10 }}>
+          {post.chips.map((c) => <span key={c} className="info-badge">{c}</span>)}
+        </div>
+      )}
+
+      {/* Title */}
+      {post.title && (
+        <div className="h-title" style={{ fontSize: 16, marginBottom: 8 }}>{post.title}</div>
+      )}
+
+      {/* Body */}
+      {post.detail && (
+        <p style={{ color: 'var(--text-dim)', fontSize: 14, lineHeight: 1.6, margin: '0 0 14px', whiteSpace: 'pre-line' }}>
+          {post.detail}
+        </p>
+      )}
+
+      {/* Photos */}
+      {post.photos?.length > 0 && (
+        <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
+          {post.photos.map((src, i) => (
+            <img key={i} src={src} alt="" style={{ width: 130, height: 96, objectFit: 'cover', borderRadius: 4, border: '1px solid var(--border)' }} />
           ))}
         </div>
+      )}
+
+      {/* Reactions + reply toggle */}
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', paddingTop: 12, borderTop: '1px solid var(--border)' }}>
+        {REACTIONS.map(({ key, emoji }) => {
+          const count   = post.reactions?.[key] || 0;
+          const active  = post.userReaction === key;
+          return (
+            <button key={key} onClick={() => onReact(post.id, key)} style={{
+              all: 'unset', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5,
+              padding: '5px 11px', borderRadius: 20,
+              background: active ? 'var(--accent-soft)' : 'transparent',
+              border: `1px solid ${active ? 'var(--accent-line)' : 'var(--border)'}`,
+              fontSize: 13, transition: 'all 0.15s',
+            }}>
+              <span>{emoji}</span>
+              <span className="mono-dim" style={{ fontSize: 11 }}>{count}</span>
+            </button>
+          );
+        })}
+        <button
+          onClick={() => setRepliesOpen((v) => !v)}
+          style={{ all: 'unset', cursor: 'pointer', marginLeft: 'auto', fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-faint)', letterSpacing: '0.06em' }}
+        >
+          {repliesOpen ? 'HIDE REPLIES' : `REPLIES (${post.comments?.length || 0})`}
+        </button>
       </div>
+
+      {/* Replies section */}
+      {repliesOpen && (
+        <div style={{ paddingTop: 14, marginTop: 12, borderTop: '1px solid var(--border)' }}>
+          {(post.comments || []).map((c) => (
+            <div key={c.id} style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
+              <div style={{ width: 28, height: 28, borderRadius: 4, background: 'var(--bg)', display: 'grid', placeItems: 'center', fontSize: 12, color: 'var(--accent-text)', fontFamily: 'var(--font-head)', fontWeight: 800, flexShrink: 0 }}>
+                {(c.author || 'U')[0].toUpperCase()}
+              </div>
+              <div>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', marginBottom: 2 }}>
+                  <span className="mono" style={{ fontSize: 12, fontWeight: 700 }}>{c.author}</span>
+                  <span className="mono-dim" style={{ fontSize: 10 }}>{c.recency}</span>
+                </div>
+                <p style={{ margin: 0, color: 'var(--text-dim)', fontSize: 13, lineHeight: 1.5 }}>{c.text}</p>
+              </div>
+            </div>
+          ))}
+          {replyError && (
+            <p style={{ color: '#f87171', fontSize: 12, fontFamily: 'var(--font-mono)', margin: '0 0 8px' }}>{replyError}</p>
+          )}
+          <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+            <input
+              value={replyText}
+              onChange={(e) => { setReplyText(e.target.value); setReplyError(''); }}
+              placeholder="Add a reply…"
+              style={{ flex: 1, fontSize: 13 }}
+              onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleReply(); } }}
+            />
+            <button className="btn ghost sm" onClick={handleReply} disabled={submitting || !replyText.trim()}>
+              {submitting ? '…' : 'POST'}
+            </button>
+          </div>
+        </div>
+      )}
+    </Panel>
+  );
+}
+
+function ComposePostModal({ profile, attempts, onClose, onSubmit, initialAttemptIdx }) {
+  const [selectedIdx, setSelectedIdx]   = useState(initialAttemptIdx ?? (attempts.length > 0 ? attempts.length - 1 : null));
+  const [exercises, setExercises]       = useState({ pushups: true, situps: true, run: true });
+  const [title, setTitle]               = useState('');
+  const [body, setBody]                 = useState('');
+  const [photos, setPhotos]             = useState([]);
+  const [feeling, setFeeling]           = useState('');
+
+  const attempt = selectedIdx !== null ? attempts[selectedIdx] : null;
+  const sc = attempt ? calculateIpptScore(attempt.pushups, attempt.situps, attempt.runSeconds) : null;
+
+  const toggleEx = (k) => setExercises((prev) => ({ ...prev, [k]: !prev[k] }));
+
+  const handleFiles = (e) => {
+    const files = Array.from(e.target.files).slice(0, 3 - photos.length);
+    Promise.all(files.map((f) => new Promise((res) => {
+      const reader = new FileReader();
+      reader.onload = (ev) => res(ev.target.result);
+      reader.readAsDataURL(f);
+    }))).then((urls) => setPhotos((prev) => [...prev, ...urls].slice(0, 3)));
+  };
+
+  const buildPost = () => {
+    const statLines = [];
+    const chips = [];
+    if (attempt) {
+      if (exercises.pushups) { statLines.push(`Push-ups: ${attempt.pushups} reps`); chips.push('Push-ups'); }
+      if (exercises.situps)  { statLines.push(`Sit-ups: ${attempt.situps} reps`);   chips.push('Sit-ups');  }
+      if (exercises.run)     { statLines.push(`2.4km: ${formatRunTime(attempt.runSeconds)}`); chips.push('2.4km'); }
+      if (sc) chips.push(sc.award);
+    }
+    if (feeling) chips.push(feeling);
+    const statsLine = statLines.join(' · ');
+    const feelingLine = feeling ? `Feeling: ${feeling}` : '';
+    const detail = [statsLine, feelingLine, body.trim()].filter(Boolean).join('\n\n');
+
+    return {
+      id: `user-${Date.now()}`,
+      name: profile.fullName,
+      unit: profile.unit || 'Unit',
+      recency: 'Just now',
+      title: title.trim(),
+      headline: title.trim() || 'Activity',
+      statline: sc ? `${sc.score} pts` : '',
+      detail,
+      chips,
+      photos,
+      reactions: { cheer: 0, fire: 0, respect: 0 },
+      userReaction: '',
+      comments: [],
+      isUserPost: true,
+    };
+  };
+
+  const canSubmit = title.trim() || body.trim();
+
+  return (
+    <Modal title="Post Activity" onClose={onClose}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+
+        {/* Attempt selector */}
+        {attempts.length > 0 ? (
+          <div>
+            <div className="label" style={{ fontSize: 10, marginBottom: 8 }}>SELECT ATTEMPT</div>
+            <select
+              value={selectedIdx ?? ''}
+              onChange={(e) => setSelectedIdx(Number(e.target.value))}
+              style={{ width: '100%' }}
+            >
+              {[...attempts].reverse().map((a, ri) => {
+                const idx = attempts.length - 1 - ri;
+                const s = calculateIpptScore(a.pushups, a.situps, a.runSeconds);
+                return (
+                  <option key={idx} value={idx}>
+                    {shortDate(a.date)} — {s.score} pts ({s.award})
+                  </option>
+                );
+              })}
+            </select>
+            {attempt && (
+              <div style={{ marginTop: 12 }}>
+                <div className="label" style={{ fontSize: 10, marginBottom: 8 }}>EXERCISES TO SHARE</div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  {[
+                    { key: 'pushups', label: `Push-ups · ${attempt.pushups}` },
+                    { key: 'situps',  label: `Sit-ups · ${attempt.situps}` },
+                    { key: 'run',     label: `2.4km · ${formatRunTime(attempt.runSeconds)}` },
+                  ].map(({ key, label }) => (
+                    <button key={key} type="button" onClick={() => toggleEx(key)} style={{
+                      padding: '6px 12px', borderRadius: 4, fontSize: 12, cursor: 'pointer',
+                      fontFamily: 'var(--font-mono)', letterSpacing: '0.04em',
+                      background: exercises[key] ? 'var(--accent-soft)' : 'transparent',
+                      border: `1px solid ${exercises[key] ? 'var(--accent-line)' : 'var(--border)'}`,
+                      color: exercises[key] ? 'var(--accent-text)' : 'var(--text-dim)',
+                      transition: 'all 0.15s',
+                    }}>{label}</button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          <p className="mono-dim" style={{ fontSize: 13, margin: 0 }}>No IPPT attempts logged yet. Log an attempt first to share your stats.</p>
+        )}
+
+        {/* Title */}
+        <div>
+          <div className="label" style={{ fontSize: 10, marginBottom: 6 }}>TITLE</div>
+          <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. New PB — Gold run" style={{ width: '100%' }} />
+        </div>
+
+        {/* Notes */}
+        <div>
+          <div className="label" style={{ fontSize: 10, marginBottom: 6 }}>NOTES</div>
+          <textarea
+            value={body}
+            onChange={(e) => setBody(e.target.value)}
+            placeholder="Share how the session went…"
+            rows={3}
+            style={{ width: '100%', resize: 'vertical', fontFamily: 'var(--font-mono)', fontSize: 13, background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 4, padding: '10px 12px', color: 'var(--text)', boxSizing: 'border-box' }}
+          />
+        </div>
+
+        {/* Feeling */}
+        <div>
+          <div className="label" style={{ fontSize: 10, marginBottom: 10 }}>I'M FEELING</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
+            {FEELINGS.map(({ emoji, label }) => {
+              const active = feeling === `${emoji} ${label}`;
+              return (
+                <button
+                  key={label}
+                  type="button"
+                  onClick={() => setFeeling(active ? '' : `${emoji} ${label}`)}
+                  style={{
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                    gap: 5, padding: '10px 6px', borderRadius: 6, cursor: 'pointer',
+                    background: active ? 'var(--accent-soft)' : 'var(--bg)',
+                    border: `1px solid ${active ? 'var(--accent-line)' : 'var(--border)'}`,
+                    transition: 'all 0.15s',
+                  }}
+                >
+                  <span style={{ fontSize: 20, lineHeight: 1 }}>{emoji}</span>
+                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: active ? 'var(--accent-text)' : 'var(--text-dim)', letterSpacing: '0.06em' }}>
+                    {label.toUpperCase()}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Photos */}
+        <div>
+          <div className="label" style={{ fontSize: 10, marginBottom: 8 }}>PHOTOS (up to 3)</div>
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 14px', border: '1px solid var(--border)', borderRadius: 4, fontSize: 12, fontFamily: 'var(--font-mono)', color: 'var(--text-dim)', cursor: photos.length < 3 ? 'pointer' : 'not-allowed', opacity: photos.length < 3 ? 1 : 0.4, letterSpacing: '0.05em' }}>
+            📷 UPLOAD
+            <input type="file" accept="image/*" multiple onChange={handleFiles} style={{ display: 'none' }} disabled={photos.length >= 3} />
+          </label>
+          {photos.length > 0 && (
+            <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+              {photos.map((src, i) => (
+                <div key={i} style={{ position: 'relative' }}>
+                  <img src={src} alt="" style={{ width: 88, height: 64, objectFit: 'cover', borderRadius: 4, border: '1px solid var(--border)' }} />
+                  <button type="button" onClick={() => setPhotos(photos.filter((_, pi) => pi !== i))}
+                    style={{ position: 'absolute', top: -6, right: -6, width: 18, height: 18, borderRadius: '50%', background: '#2a2a2a', border: '1px solid var(--border)', color: '#aaa', cursor: 'pointer', fontSize: 11, display: 'grid', placeItems: 'center', padding: 0 }}>
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <button className="primary-button" onClick={() => { if (canSubmit) onSubmit(buildPost()); }} style={{ opacity: canSubmit ? 1 : 0.45, cursor: canSubmit ? 'pointer' : 'not-allowed' }}>
+          POST ACTIVITY
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+function TrainingFeedScreen({ state, updateState }) {
+  const profile   = state.auth.profile;
+  const location  = useLocation();
+  const [showCompose, setShowCompose] = useState(location.state?.autoCompose ?? false);
+  const [autoAttemptIdx] = useState(location.state?.attemptIdx ?? null);
+
+  const posts = state.social?.trainingFeedPosts ?? [];
+
+  const react = (postId, key) => {
+    updateState((c) => ({
+      ...c,
+      social: {
+        ...c.social,
+        trainingFeedPosts: c.social.trainingFeedPosts.map((p) => {
+          if (p.id !== postId) return p;
+          const was = p.userReaction === key;
+          const r   = { ...p.reactions };
+          if (p.userReaction) r[p.userReaction] = Math.max(0, (r[p.userReaction] || 0) - 1);
+          if (!was) r[key] = (r[key] || 0) + 1;
+          return { ...p, userReaction: was ? '' : key, reactions: r };
+        }),
+      },
+    }));
+  };
+
+  const addReply = (postId, text) => {
+    updateState((c) => ({
+      ...c,
+      social: {
+        ...c.social,
+        trainingFeedPosts: c.social.trainingFeedPosts.map((p) =>
+          p.id !== postId ? p : {
+            ...p,
+            comments: [...(p.comments || []), { id: Date.now(), author: profile.fullName, text, recency: 'Just now' }],
+          }
+        ),
+      },
+    }));
+  };
+
+  const publishPost = (post) => {
+    updateState((c) => ({
+      ...c,
+      social: { ...c.social, trainingFeedPosts: [post, ...c.social.trainingFeedPosts] },
+    }));
+    setShowCompose(false);
+  };
+
+  return (
+    <div style={{ height: '100%', overflow: 'auto', padding: '28px 36px' }}>
+      <span className="label" style={{ color: 'var(--accent-text)', marginBottom: 8, display: 'block' }}>▲ SERVE · TRAINING FEED</span>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 24 }}>
+        <h1 className="h-display" style={{ fontSize: 52, margin: 0 }}>TRAINING FEED</h1>
+        <button className="btn" style={{ padding: '10px 20px' }} onClick={() => setShowCompose(true)}>
+          + POST ACTIVITY
+        </button>
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        {posts.length === 0 && (
+          <div className="mono-dim" style={{ textAlign: 'center', padding: '48px 0' }}>
+            No activity posted yet. Be the first.
+          </div>
+        )}
+        {posts.map((post) => (
+          <FeedPostCard
+            key={post.id}
+            post={post}
+            onReact={react}
+            onAddReply={addReply}
+          />
+        ))}
+      </div>
+
+      {showCompose && (
+        <ComposePostModal
+          profile={profile}
+          attempts={state.ippt.attempts}
+          initialAttemptIdx={autoAttemptIdx}
+          onClose={() => setShowCompose(false)}
+          onSubmit={publishPost}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─── WEEKEND PLANNER ─────────────────────────────────────────────────────────
+function WeekendPlannerScreen({ state, activeModule }) {
+  const profile = state.auth.profile;
+  const [plan, setPlan] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const recentAttempts = state.ippt.attempts.slice(-3).map((a) => {
+      const sc = calculateIpptScore(a.pushups, a.situps, a.runSeconds);
+      return { score: sc.score, pushups: a.pushups, situps: a.situps, runTime: formatRunTime(a.runSeconds) };
+    });
+    const latest = recentAttempts[recentAttempts.length - 1];
+
+    nlpService.getWeekendPlan({
+      pesStatus: profile.pesStatus,
+      vocation: profile.vocation || 'General',
+      ipptGoal: state.onboarding.ipptGoal || 'Pass',
+      currentScore: latest?.score ?? null,
+      currentAward: latest ? calculateIpptScore(
+        state.ippt.attempts.slice(-1)[0].pushups,
+        state.ippt.attempts.slice(-1)[0].situps,
+        state.ippt.attempts.slice(-1)[0].runSeconds,
+      ).award : null,
+      attempts: recentAttempts,
+    }).then((data) => {
+      setPlan(data || getWeekendPlanner(profile, state.onboarding.ipptGoal, state.ippt.attempts));
+      setLoading(false);
+    });
+  }, []);
+
+  const displayPlan = plan || getWeekendPlanner(profile, state.onboarding.ipptGoal, state.ippt.attempts);
+
+  return (
+    <section style={{ padding: '28px 36px' }}>
+      <span className="label" style={{ color: 'var(--accent-text)', marginBottom: 8, display: 'block' }}>▲ SERVE · WEEKEND PLANNER</span>
+      <h1 className="h-display" style={{ fontSize: 52, marginBottom: 6 }}>WEEKEND PLANNER</h1>
+      <p style={{ color: 'var(--text-dim)', marginBottom: 20, fontSize: 14 }}>
+        {activeModule === 'serve'
+          ? 'AI-curated two-day block based on your IPPT band, PES status, and vocation.'
+          : 'AI-curated two-day block based on your IPPT band and target.'}
+      </p>
+      <div className="badge-row" style={{ marginBottom: 20 }}>
+        <span className="info-badge">PES {profile.pesStatus}</span>
+        <span className="info-badge">{(profile.vocation || 'General').toUpperCase()}</span>
+        <span className="info-badge">{state.onboarding.ipptGoal}</span>
+        {loading && <span className="info-badge" style={{ color: 'var(--accent-text)' }}>◈ Generating…</span>}
+      </div>
+
+      <Panel ticks elevated style={{ padding: 26, marginBottom: 16 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
+          <div>
+            <div className="label" style={{ color: 'var(--accent-text)', marginBottom: 6 }}>▲ THIS WEEKEND · AI PLAN</div>
+            <div className="h-title" style={{ fontSize: 20 }}>IPPT / VOCATION-BASED WEEKEND PLAN</div>
+          </div>
+          <span className="info-badge">{(profile.vocation || 'General').toUpperCase()}</span>
+        </div>
+        <p style={{ color: 'var(--text-dim)', marginBottom: 20, lineHeight: 1.6 }}>{displayPlan.summary}</p>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+          {displayPlan.days.map((day) => (
+            <Panel key={day.id} style={{ padding: 20 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <span className="h-title" style={{ fontSize: 16 }}>{day.label}</span>
+                <span className="mono-dim">{day.duration}</span>
+              </div>
+              <p style={{ color: 'var(--text-dim)', fontSize: 13.5, lineHeight: 1.6, margin: 0 }}>{day.workout}</p>
+            </Panel>
+          ))}
+        </div>
+      </Panel>
     </section>
   );
 }

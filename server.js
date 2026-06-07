@@ -200,6 +200,41 @@ app.post('/api/moderate', async (req, res) => {
   }
 });
 
+// POST /api/weekend-plan { pesStatus, vocation, ipptGoal, currentScore, currentAward, attempts }
+// -> { summary, days: [{ id, label, duration, workout }] }
+const WEEKEND_PLAN_SYSTEM = `You are a physical training advisor for Singapore National Servicemen. Generate a personalised 2-day weekend IPPT training plan.
+
+Return ONLY valid JSON with no preamble, no markdown, no backticks.
+Schema: { "summary": string, "days": [{ "id": string, "label": string, "duration": string, "workout": string }] }
+
+Rules:
+- days must have exactly 2 entries: first has id "sat" and label "Saturday", second has id "sun" and label "Sunday"
+- summary: 1-2 sentences explaining the weekend focus given current standing
+- duration: e.g. "50 min"
+- workout: specific, practical instructions (2-4 sentences). Name actual exercises, sets, reps. Reference the vocation where appropriate.
+- Tailor intensity to the PES status, vocation physical demands, IPPT goal, and gap between current score and goal
+- Do not prescribe high-impact running for PES C or E
+- Keep language direct and practical, not motivational-poster style`;
+
+app.post('/api/weekend-plan', async (req, res) => {
+  const { pesStatus, vocation, ipptGoal, currentScore, currentAward, attempts } = req.body || {};
+  const recentAttempts = Array.isArray(attempts) ? attempts.slice(-3) : [];
+  const attemptsText = recentAttempts.length
+    ? recentAttempts.map((a) => `Score: ${a.score}, Push-ups: ${a.pushups}, Sit-ups: ${a.situps}, Run: ${a.runTime}`).join('; ')
+    : 'No attempts logged yet';
+
+  const prompt = `PES Status: ${pesStatus || 'A'}\nVocation: ${vocation || 'General'}\nIPPT Goal: ${ipptGoal || 'Pass'}\nCurrent Score: ${currentScore ?? 'No attempts yet'}\nCurrent Award: ${currentAward || 'None'}\nRecent Attempts: ${attemptsText}\n\nGenerate the 2-day weekend training plan.`;
+
+  try {
+    const raw = await chatJSON(WEEKEND_PLAN_SYSTEM, prompt);
+    if (!raw?.days?.length) throw new Error('Invalid shape');
+    return res.json(raw);
+  } catch (err) {
+    console.error('[weekend-plan] falling back:', err.message);
+    return res.status(500).json({ error: 'Failed to generate plan' });
+  }
+});
+
 // POST /api/companion { message, history } -> { reply }
 // Multi-turn: history is the full prior conversation; the new user message is
 // appended before sending the whole thread to the model.
