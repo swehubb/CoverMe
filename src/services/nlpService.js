@@ -110,4 +110,17 @@ export async function trendNarrative(scores) {
   }
 }
 
-export default { analyze, moderate, moderateBuddy, companion, trendNarrative };
+// getWeekendPlan({ pesStatus, vocation, ipptGoal, currentScore, currentAward, attempts })
+// -> { summary, days } | null on failure
+export async function getWeekendPlan(payload) {
+  try {
+    const data = await postJSON('/api/weekend-plan', payload);
+    if (!data?.days?.length) throw new Error('Invalid shape');
+    return data;
+  } catch (err) {
+    console.warn('[nlpService.getWeekendPlan] fallback:', err.message);
+    return null;
+  }
+}
+
+export default { analyze, moderate, moderateBuddy, companion, trendNarrative, getWeekendPlan };

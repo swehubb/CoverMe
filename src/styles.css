@@ -366,6 +366,8 @@ select.inp { cursor:pointer; appearance:none; background-image:url("data:image/s
 .verified-badge { font-family:var(--font-mono); font-size:10px; letter-spacing:0.06em; padding:3px 8px; border:1px solid var(--accent-line); border-radius:4px; color:var(--accent-text); background:var(--accent-soft); white-space:nowrap; }
 .feed-card-title { font-family:var(--font-head); font-weight:700; font-size:16px; letter-spacing:0.02em; margin:4px 0 8px; }
 .feed-card-body { color:var(--text-dim); font-size:14px; line-height:1.55; margin:0; }
+@keyframes attempt-glow { 0%{background:transparent} 25%{background:rgba(180,140,50,0.18);box-shadow:inset 0 0 0 1px rgba(180,140,50,0.35)} 100%{background:transparent} }
+.attempt-glow { animation:attempt-glow 2s ease-out forwards; }
 .feed-thread-meta { display:flex; gap:12px; align-items:center; margin-top:10px; padding-top:10px; border-top:1px solid var(--border); }
 .thread-stat,.thread-vote { all:unset; cursor:pointer; font-family:var(--font-mono); font-size:12px; color:var(--text-faint); transition:color 0.15s; }
 .thread-stat:hover,.thread-vote:hover { color:var(--text-dim); }
