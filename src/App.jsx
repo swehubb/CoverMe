@@ -973,19 +973,33 @@ function BuddyTapScreen({ state, updateState }) {
   );
 }
 
-function TrainScreen({ state, updateState, activeModule }) {
+function TrainScreen({ state, updateState }) {
   const [showModal, setShowModal] = useState(false);
-  const [form, setForm] = useState({ pushups: '', situps: '', runTime: '12:30', date: '2026-05-20' });
-  const [postForm, setPostForm] = useState({ headline: '', detail: '', statline: '', tag: 'IPPT' });
-  const [commentDrafts, setCommentDrafts] = useState({});
+  const [form, setForm] = useState({ pushups: '', situps: '', runTime: '12:30', date: isoDate(getToday()) });
+
   const attempts = state.ippt.attempts;
-  const activityFeed = state.social.trainingFeed;
-  const pbs = getPbs(attempts);
-  const projected = calculateIpptScore(
-    Number(form.pushups || pbs.pushups),
-    Number(form.situps || pbs.situps),
-    form.runTime ? toSeconds(form.runTime) : pbs.runSeconds,
-  );
+  const latest = attempts.length ? attempts[attempts.length - 1] : null;
+
+  const latestScore = latest
+    ? calculateIpptScore(latest.pushups, latest.situps, latest.runSeconds)
+    : null;
+
+  const stationPts = latest
+    ? {
+        pushups: Math.min(25, Math.floor(latest.pushups / 2)),
+        situps:  Math.min(25, Math.floor(latest.situps / 2)),
+        run:     Math.max(0, Math.min(50, Math.round((900 - latest.runSeconds) / 6))),
+      }
+    : null;
+
+  const GOAL_MAP = { Gold: 85, Silver: 75, 'Pass with Incentive': 61, Pass: 61 };
+  const goalName  = state.onboarding.ipptGoal || 'Pass';
+  const goalScore = GOAL_MAP[goalName] ?? 61;
+
+  const chartSeries = attempts.map((a) => ({
+    v:     calculateIpptScore(a.pushups, a.situps, a.runSeconds).score,
+    label: shortDate(a.date),
+  }));
 
   const submitAttempt = () => {
     const runSeconds = toSeconds(form.runTime);
@@ -996,12 +1010,7 @@ function TrainScreen({ state, updateState, activeModule }) {
       ippt: {
         attempts: [
           ...current.ippt.attempts,
-          {
-            date: form.date,
-            pushups: Number(form.pushups),
-            situps: Number(form.situps),
-            runSeconds,
-          },
+          { date: form.date, pushups: Number(form.pushups), situps: Number(form.situps), runSeconds },
         ],
       },
     }));
@@ -1009,279 +1018,147 @@ function TrainScreen({ state, updateState, activeModule }) {
     setShowModal(false);
   };
 
-  const chartData = {
-    labels: attempts.map((attempt) => shortDate(attempt.date)),
-    datasets: [
-      {
-        data: attempts.map((attempt) =>
-          calculateIpptScore(attempt.pushups, attempt.situps, attempt.runSeconds).score,
-        ),
-        borderColor: '#4A7C59',
-        backgroundColor: 'rgba(74, 124, 89, 0.14)',
-        tension: 0.35,
-        fill: true,
-      },
-    ],
-  };
-
-  const publishPost = () => {
-    if (!postForm.headline.trim() || !postForm.detail.trim()) return;
-
-    updateState((current) => ({
-      ...current,
-      social: {
-        ...current.social,
-        trainingFeed: [
-          {
-            id: Date.now(),
-            name: toTitleCase(current.auth.profile.fullName),
-            unit: current.auth.profile.unit || 'NS Unit',
-            recency: 'Just now',
-            headline: postForm.headline.trim(),
-            statline: postForm.statline.trim() || `${projected.score} pts`,
-            detail: postForm.detail.trim(),
-            chips: [postForm.tag, 'New Post'],
-            reactions: { cheer: 0, fire: 0, respect: 0 },
-            userReaction: '',
-            comments: [],
-          },
-          ...current.social.trainingFeed,
-        ],
-      },
-    }));
-
-    setPostForm({ headline: '', detail: '', statline: '', tag: 'IPPT' });
-  };
-
-  const toggleReaction = (activityId, reactionType) => {
-    updateState((current) => ({
-      ...current,
-      social: {
-        ...current.social,
-        trainingFeed: current.social.trainingFeed.map((item) => {
-          if (item.id !== activityId) return item;
-
-          const nextReactions = { ...item.reactions };
-          if (item.userReaction) {
-            nextReactions[item.userReaction] = Math.max(0, (nextReactions[item.userReaction] || 0) - 1);
-          }
-
-          const nextUserReaction = item.userReaction === reactionType ? '' : reactionType;
-          if (nextUserReaction) {
-            nextReactions[nextUserReaction] = (nextReactions[nextUserReaction] || 0) + 1;
-          }
-
-          return {
-            ...item,
-            reactions: nextReactions,
-            userReaction: nextUserReaction,
-          };
-        }),
-      },
-    }));
-  };
-
-  const submitComment = (activityId) => {
-    const draft = (commentDrafts[activityId] || '').trim();
-    if (!draft) return;
-
-    updateState((current) => ({
-      ...current,
-      social: {
-        ...current.social,
-        trainingFeed: current.social.trainingFeed.map((item) =>
-          item.id === activityId
-            ? {
-                ...item,
-                comments: [
-                  ...item.comments,
-                  {
-                    id: Date.now(),
-                    author: toTitleCase(current.auth.profile.fullName),
-                    text: draft,
-                    recency: 'Just now',
-                  },
-                ],
-              }
-            : item,
-        ),
-      },
-    }));
-
-    setCommentDrafts((current) => ({ ...current, [activityId]: '' }));
-  };
+  const stationRows = [
+    { label: 'PUSH-UPS',   val: latest?.pushups,                             pts: stationPts?.pushups, max: 25 },
+    { label: 'SIT-UPS',    val: latest?.situps,                              pts: stationPts?.situps,  max: 25 },
+    { label: '2.4KM RUN',  val: latest ? formatRunTime(latest.runSeconds) : null, pts: stationPts?.run, max: 50 },
+  ];
 
   return (
-    <section>
-      <ScreenHeader
-        title={activeModule === 'enlist' ? 'PES-Based Fitness Prep' : 'IPPT Tracker'}
-        subtitle={
-          activeModule === 'enlist'
-            ? 'Use your current results to understand your prep gap before enlistment and train with more confidence.'
-            : 'Log attempts, set goals, and close the gap to your active-service target.'
-        }
-      />
-      <div className="stats-row">
-        <StatBlock label="Push-up PB" value={pbs.pushups} suffix="reps" />
-        <StatBlock label="Sit-up PB" value={pbs.situps} suffix="reps" />
-        <StatBlock label="2.4km PB" value={formatRunTime(pbs.runSeconds)} />
-      </div>
-      <div className="goal-banner">{state.onboarding.ipptGoal} target</div>
-      {activeModule === 'serve' && (
-        <NavLink to="/weekend-planner" className="secondary-button">
-          View Weekend IPPT Planner
-        </NavLink>
-      )}
-      <div className="calculator-card">
-        <h3>Projected Score</h3>
-        <div className="projected-score">{projected.score}</div>
-        <div className="award-line">{projected.award}</div>
-        <div className="calculator-grid">
-          <input
-            type="number"
-            placeholder="Push-ups"
-            value={form.pushups}
-            onChange={(event) => setForm({ ...form, pushups: event.target.value })}
-          />
-          <input
-            type="number"
-            placeholder="Sit-ups"
-            value={form.situps}
-            onChange={(event) => setForm({ ...form, situps: event.target.value })}
-          />
-          <input
-            type="text"
-            placeholder="MM:SS"
-            value={form.runTime}
-            onChange={(event) => setForm({ ...form, runTime: event.target.value })}
-          />
-        </div>
-        <button className="primary-button" onClick={() => setShowModal(true)}>
-          Log Attempt
-        </button>
-      </div>
-      <div className="chart-card">
-        <Line options={chartOptions({ yLabel: false })} data={chartData} />
-      </div>
-      <div className="activity-section">
-        <div className="activity-section-header">
-          <div>
-            <p className="kicker">Training Feed</p>
-            <h3>{activeModule === 'enlist' ? 'Prep circle activity' : 'Unit training activity'}</h3>
+    <div style={{ height: '100%', overflow: 'auto', padding: '28px 36px' }}>
+      <span className="label" style={{ color: 'var(--accent-text)', marginBottom: 8, display: 'block' }}>
+        ▲ SERVE · IPPT TRACKER
+      </span>
+      <h1 className="h-display" style={{ fontSize: 52, marginBottom: 24 }}>IPPT TRACKER</h1>
+
+      {/* Row 1: 2-column overview */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1.1fr 1.4fr', gap: 16, marginBottom: 16 }}>
+        {/* CURRENT STANDING */}
+        <Panel ticks style={{ padding: 26 }}>
+          <span className="label" style={{ marginBottom: 18, display: 'block' }}>▲ CURRENT STANDING</span>
+          <div style={{ fontFamily: 'var(--font-head)', fontWeight: 900, fontSize: 76, lineHeight: 1, color: 'var(--amber)', marginBottom: 14 }}>
+            {latestScore ? latestScore.score : '—'}
           </div>
-          <span className="info-badge">Live PBs</span>
-        </div>
-        <div className="activity-composer">
-          <div className="activity-composer-top">
-            <div className="activity-avatar">{getInitials(state.auth.profile.fullName)}</div>
-            <div>
-              <strong>Post an update</strong>
-              <span>Share a new PB, a hard session, or your projected score.</span>
+          {latestScore && <Award award={latestScore.award} />}
+          <div style={{ marginTop: 28 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+              <span className="mono-dim">GOAL · {goalName.toUpperCase()}</span>
+              <span className="mono-dim">{goalScore} PTS</span>
+            </div>
+            <div style={{ height: 6, background: 'var(--bg)', borderRadius: 3, overflow: 'hidden' }}>
+              <div style={{
+                width: `${Math.min(100, ((latestScore?.score ?? 0) / goalScore) * 100)}%`,
+                height: '100%',
+                background: 'var(--amber)',
+                borderRadius: 3,
+                transition: 'width 0.4s ease',
+              }} />
+            </div>
+            <div className="mono-dim" style={{ marginTop: 6, textAlign: 'right', fontSize: 10 }}>
+              {latestScore ? `${latestScore.score} / ${goalScore}` : `0 / ${goalScore}`}
             </div>
           </div>
-          <div className="activity-composer-grid">
-            <input
-              type="text"
-              placeholder="Headline"
-              value={postForm.headline}
-              onChange={(event) => setPostForm({ ...postForm, headline: event.target.value })}
-            />
-            <input
-              type="text"
-              placeholder="Stat line"
-              value={postForm.statline}
-              onChange={(event) => setPostForm({ ...postForm, statline: event.target.value })}
-            />
-            <select value={postForm.tag} onChange={(event) => setPostForm({ ...postForm, tag: event.target.value })}>
-              <option>IPPT</option>
-              <option>2.4km</option>
-              <option>Push-ups</option>
-              <option>Sit-ups</option>
-              <option>Recovery</option>
-            </select>
+        </Panel>
+
+        {/* STATION BREAKDOWN */}
+        <Panel ticks style={{ padding: 26 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+            <span className="label">▲ STATION BREAKDOWN · LATEST</span>
+            <button className="btn ghost sm" onClick={() => setShowModal(true)}>LOG ATTEMPT</button>
           </div>
-          <textarea
-            value={postForm.detail}
-            onChange={(event) => setPostForm({ ...postForm, detail: event.target.value })}
-            placeholder="What changed, what worked, or what you are proud of."
-            rows={3}
-          />
-          <button className="primary-button small" onClick={publishPost}>
-            Post update
-          </button>
-        </div>
-        <div className="activity-feed">
-          {activityFeed.map((item) => (
-            <article key={item.id} className="activity-card">
-              <div className="activity-topline">
-                <div className="activity-user">
-                  <div className="activity-avatar">{getInitials(item.name)}</div>
-                  <div>
-                    <strong>{item.name}</strong>
-                    <span>
-                      {item.unit} · {item.recency}
-                    </span>
-                  </div>
-                </div>
-                <div className="activity-statline">{item.statline}</div>
+          {stationRows.map((s) => (
+            <div key={s.label} style={{ marginBottom: 18 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 5 }}>
+                <span className="label" style={{ fontSize: 10 }}>{s.label}</span>
+                <span style={{ fontFamily: 'var(--font-mono)', fontSize: 22, color: 'var(--amber)', fontVariantNumeric: 'tabular-nums' }}>
+                  {s.val ?? '—'}
+                </span>
               </div>
-              <h4>{item.headline}</h4>
-              <p>{item.detail}</p>
-              <div className="activity-chip-row">
-                {item.chips.map((chip) => (
-                  <span key={chip} className="activity-chip">
-                    {chip}
-                  </span>
-                ))}
+              <div style={{ height: 4, background: 'var(--bg)', borderRadius: 2, overflow: 'hidden' }}>
+                <div style={{
+                  width: `${s.pts != null ? (s.pts / s.max) * 100 : 0}%`,
+                  height: '100%',
+                  background: 'var(--amber)',
+                  borderRadius: 2,
+                }} />
               </div>
-              <div className="activity-action-row">
-                {[
-                  ['cheer', 'Cheer'],
-                  ['fire', 'Fire'],
-                  ['respect', 'Respect'],
-                ].map(([key, label]) => (
-                  <button
-                    key={key}
-                    type="button"
-                    className={`activity-action ${item.userReaction === key ? 'active' : ''}`}
-                    onClick={() => toggleReaction(item.id, key)}
-                  >
-                    {label} {item.reactions[key]}
-                  </button>
-                ))}
+              <div className="mono-dim" style={{ fontSize: 10, marginTop: 3 }}>
+                {s.pts != null ? `${s.pts} / ${s.max} PTS` : '—'}
               </div>
-              <div className="activity-comments">
-                {item.comments.map((comment) => (
-                  <div key={comment.id} className="activity-comment">
-                    <strong>{comment.author}</strong>
-                    <span>{comment.recency}</span>
-                    <p>{comment.text}</p>
-                  </div>
-                ))}
-              </div>
-              <div className="activity-comment-composer">
-                <input
-                  type="text"
-                  placeholder="Leave a comment"
-                  value={commentDrafts[item.id] || ''}
-                  onChange={(event) =>
-                    setCommentDrafts((current) => ({
-                      ...current,
-                      [item.id]: event.target.value,
-                    }))
-                  }
-                />
-                <button type="button" className="secondary-button activity-comment-button" onClick={() => submitComment(item.id)}>
-                  Comment
-                </button>
-              </div>
-            </article>
+            </div>
           ))}
-        </div>
+        </Panel>
       </div>
-      <NavLink to="/fitness-prep" className="secondary-button">
-        View IPPT/Vocation-Based Training Plan
-      </NavLink>
+
+      {/* SCORE PROGRESSION chart */}
+      <Panel ticks style={{ padding: 26, marginBottom: 16 }}>
+        <span className="label" style={{ marginBottom: 16, display: 'block' }}>▲ SCORE PROGRESSION</span>
+        {chartSeries.length > 0 ? (
+          <>
+            <SvgLineChart
+              data={chartSeries}
+              accessor={(d) => d.v}
+              yMax={100}
+              yMin={0}
+              height={200}
+              goal={goalScore}
+              color="var(--amber)"
+              fmt={(v) => String(Math.round(v))}
+            />
+            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 28px 0' }}>
+              {chartSeries.map((d) => (
+                <span key={d.label} className="mono-dim" style={{ fontSize: 10 }}>{d.label}</span>
+              ))}
+            </div>
+          </>
+        ) : (
+          <div className="mono-dim" style={{ padding: '40px 0', textAlign: 'center' }}>
+            No attempts logged yet. Log your first attempt to see your progression.
+          </div>
+        )}
+      </Panel>
+
+      {/* ATTEMPT HISTORY */}
+      <Panel ticks style={{ padding: 26 }}>
+        <span className="label" style={{ marginBottom: 16, display: 'block' }}>▲ ATTEMPT HISTORY</span>
+        {attempts.length > 0 ? (
+          <>
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: '110px repeat(3, 1fr) 70px 100px',
+              padding: '0 0 8px',
+              borderBottom: '1px solid var(--border)',
+            }}>
+              {['DATE', 'PUSH-UPS', 'SIT-UPS', '2.4KM', 'PTS', 'AWARD'].map((h) => (
+                <span key={h} className="label" style={{ fontSize: 10 }}>{h}</span>
+              ))}
+            </div>
+            {[...attempts].reverse().map((attempt, i) => {
+              const sc = calculateIpptScore(attempt.pushups, attempt.situps, attempt.runSeconds);
+              return (
+                <div key={i} style={{
+                  display: 'grid',
+                  gridTemplateColumns: '110px repeat(3, 1fr) 70px 100px',
+                  padding: '11px 0',
+                  borderBottom: '1px solid var(--border)',
+                  alignItems: 'center',
+                }}>
+                  <span className="mono-dim">{shortDate(attempt.date)}</span>
+                  <span className="mono">{attempt.pushups}</span>
+                  <span className="mono">{attempt.situps}</span>
+                  <span className="mono">{formatRunTime(attempt.runSeconds)}</span>
+                  <span className="mono" style={{ color: 'var(--amber)', fontWeight: 700 }}>{sc.score}</span>
+                  <Award award={sc.award} />
+                </div>
+              );
+            })}
+          </>
+        ) : (
+          <div className="mono-dim" style={{ padding: '20px 0', textAlign: 'center' }}>
+            No attempts logged yet.
+          </div>
+        )}
+      </Panel>
 
       {showModal && (
         <Modal title="Log IPPT Attempt" onClose={() => setShowModal(false)}>
@@ -1311,7 +1188,7 @@ function TrainScreen({ state, updateState, activeModule }) {
           </button>
         </Modal>
       )}
-    </section>
+    </div>
   );
 }
 
@@ -1791,11 +1668,46 @@ function EscalationScreen({ state }) {
   );
 }
 
-function ProfileScreen({ state, updateState, phase, activeModule }) {
+function ProfileScreen({ state, updateState }) {
   const profile = state.auth.profile;
   const navigate = useNavigate();
   const ordDate = addYears(profile.enlistmentDate, 2);
   const ordDays = daysBetween(getToday(), ordDate);
+
+  const [platoonFeed, setPlatoonFeed] = useState(true);
+  const [eveningReminder, setEveningReminder] = useState(true);
+
+  const branch = state.ui?.branch || 'army';
+  const goalName = state.onboarding.ipptGoal || 'Pass';
+
+  const ipptAttempts = state.ippt.attempts;
+  const latestIppt = ipptAttempts.length ? ipptAttempts[ipptAttempts.length - 1] : null;
+  const latestScore = latestIppt
+    ? calculateIpptScore(latestIppt.pushups, latestIppt.situps, latestIppt.runSeconds).score
+    : null;
+  const bestRunSeconds = ipptAttempts.length
+    ? Math.min(...ipptAttempts.map((a) => a.runSeconds))
+    : null;
+  const journalStreak = getJournalStreak(state.journal.entries);
+
+  const achievements = useMemo(() => {
+    const list = [];
+    if ((state.community?.buddyTaps || []).length > 0)
+      list.push({ key: 'buddy', name: 'BROTHER IN ARMS', tier: 'bronze', desc: 'Tapped a buddy who needed cover' });
+    if (journalStreak >= 30)
+      list.push({ key: 'streak-30', name: 'IRON ROUTINE', tier: 'gold', desc: '30-night journal streak' });
+    else if (journalStreak >= 12)
+      list.push({ key: 'streak-12', name: 'DISCIPLINE · 12', tier: 'silver', desc: '12-night journal streak' });
+    else if (journalStreak >= 7)
+      list.push({ key: 'streak-7', name: 'DISCIPLINE · 7', tier: 'bronze', desc: '7-night journal streak' });
+    if (ipptAttempts.find((a) => a.runSeconds < 600))
+      list.push({ key: 'pb-run', name: 'SUB-10 RUNNER', tier: 'gold', desc: '2.4km run under 10:00' });
+    if (ipptAttempts.some((a) => calculateIpptScore(a.pushups, a.situps, a.runSeconds).score >= 85))
+      list.push({ key: 'gold-std', name: 'GOLD STANDARD', tier: 'gold', desc: 'Achieved a Gold IPPT award' });
+    else if (ipptAttempts.some((a) => calculateIpptScore(a.pushups, a.situps, a.runSeconds).score >= 75))
+      list.push({ key: 'silver-std', name: 'SILVER STANDARD', tier: 'silver', desc: 'Hit a Silver IPPT award' });
+    return list;
+  }, [ipptAttempts, journalStreak, state.community?.buddyTaps]);
 
   const signOut = () => {
     localStorage.removeItem(STORAGE_KEY);
@@ -1803,45 +1715,204 @@ function ProfileScreen({ state, updateState, phase, activeModule }) {
     navigate('/login');
   };
 
+  const setGoal = (key) =>
+    updateState((c) => ({ ...c, onboarding: { ...c.onboarding, ipptGoal: key } }));
+  const setBranch = (b) =>
+    updateState((c) => ({ ...c, ui: { ...c.ui, branch: b } }));
+  const toggleConsent = () =>
+    updateState((c) => ({ ...c, onboarding: { ...c.onboarding, consented: !c.onboarding.consented } }));
+
+  const GOAL_TIERS = [
+    { key: 'Pass',   label: 'PASS',   min: 61 },
+    { key: 'Silver', label: 'SILVER', min: 75 },
+    { key: 'Gold',   label: 'GOLD',   min: 85 },
+  ];
+
+  const BRANCH_LIST = [
+    { key: 'army', label: 'LAND' },
+    { key: 'navy', label: 'SEA' },
+    { key: 'air',  label: 'AIR' },
+    { key: 'dis',  label: 'DIGITAL' },
+  ];
+
+  const BRANCH_FORCE_LABEL = { army: 'LAND FORCE', navy: 'SEA FORCE', air: 'AIR FORCE', dis: 'DIGITAL FORCE' };
+
   return (
-    <section>
-      <ScreenHeader title="Profile" subtitle="Singpass and MINDEF-sourced service profile." />
-      <div className="profile-layout">
-        <div className="profile-card profile-hero-card">
-          <p className="kicker">Service profile</p>
-          <h2>{toTitleCase(profile.fullName)}</h2>
-          <p className="profile-hero-meta">
-            PES {profile.pesStatus}
-            {profile.unit ? ` · ${profile.unit}` : ''}
-          </p>
-          <div className="profile-stat-row">
-            <div className="profile-stat">
-              <span>Current phase</span>
-              <strong>{phase === 'enlist' ? 'Enlist' : 'Serve'}</strong>
+    <div style={{ height: '100%', overflow: 'auto', padding: '28px 36px' }}>
+      <div style={{ maxWidth: 1120, margin: '0 auto' }}>
+
+        {/* Identity panel */}
+        <Panel elevated ticks style={{ padding: 30, marginBottom: 14, display: 'flex', alignItems: 'center', gap: 22 }}>
+          <div style={{ width: 72, height: 72, borderRadius: 12, background: 'var(--accent-soft)', flexShrink: 0,
+            border: '1px solid var(--accent-line)', color: 'var(--accent-text)', display: 'grid', placeItems: 'center' }}>
+            <Insignia branch={branch} size={40} />
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontFamily: 'var(--font-head)', fontWeight: 700, fontSize: 32, lineHeight: 1 }}>
+              {profile.fullName.toUpperCase()}
             </div>
-            <div className="profile-stat">
-              <span>Module view</span>
-              <strong>{activeModule === 'enlist' ? 'Enlist' : 'Serve'}</strong>
-            </div>
-            <div className="profile-stat">
-              <span>Days to ORD</span>
-              <strong>{ordDays}</strong>
+            <div className="mono-dim" style={{ marginTop: 8, fontSize: 12.5 }}>
+              PES {profile.pesStatus} · {(profile.vocation || 'INFANTRY').toUpperCase()} · {profile.unit || '—'}
             </div>
           </div>
-        </div>
-        <div className="profile-card">
-          <ProfileRow label="Full name" value={toTitleCase(profile.fullName)} />
-          <ProfileRow label="NRIC" value={profile.nric} />
-          <ProfileRow label="Enlistment date" value={profile.enlistmentDate} />
-          <ProfileRow label="PES status" value={profile.pesStatus} />
-          <ProfileRow label="Unit" value={profile.unit || 'Pending assignment'} />
-          <ProfileRow label="IPPT goal" value={state.onboarding.ipptGoal} />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-end', flexShrink: 0 }}>
+            <span className="badge verified">{BRANCH_FORCE_LABEL[branch]}</span>
+            <span className="badge" style={{ background: 'var(--amber)', color: '#0A0A0A' }}>
+              {goalName.toUpperCase()} TARGET
+            </span>
+          </div>
+        </Panel>
+
+        {/* Stats row */}
+        <Panel flush style={{ padding: '22px 30px', marginBottom: 14, display: 'grid',
+          gridTemplateColumns: 'repeat(4,1fr)', gap: 18 }}>
+          <Stat label="DAYS TO ORD" value={ordDays} size={28} />
+          <Stat label="LATEST IPPT" value={latestScore ?? '—'} unit={latestScore != null ? 'PTS' : undefined} size={28} />
+          <Stat label="2.4KM PB" value={bestRunSeconds != null ? formatRunTime(bestRunSeconds) : '—'} size={28} />
+          <Stat label="JOURNAL STREAK" value={journalStreak} unit="D" size={28} />
+        </Panel>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: 14, alignItems: 'start' }}>
+
+          {/* Preferences panel */}
+          <Panel style={{ padding: 28 }}>
+            <span className="label" style={{ marginBottom: 18, display: 'block' }}>▲ IPPT OBJECTIVE</span>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8 }}>
+              {GOAL_TIERS.map((t) => {
+                const active = goalName === t.key;
+                return (
+                  <button key={t.key} onClick={() => setGoal(t.key)}
+                    style={{ all: 'unset', cursor: 'pointer', display: 'flex', flexDirection: 'column',
+                      alignItems: 'center', gap: 6, padding: '14px 8px', borderRadius: 8,
+                      border: `1px solid ${active ? 'var(--accent-line)' : 'var(--border-strong)'}`,
+                      background: active ? 'var(--accent-soft)' : 'var(--bg)' }}>
+                    <span style={{ fontFamily: 'var(--font-head)', fontWeight: 700, fontSize: 15,
+                      color: active ? 'var(--text)' : 'var(--text-dim)' }}>{t.label}</span>
+                    <span className="mono" style={{ fontSize: 13, color: active ? 'var(--amber)' : 'var(--text-faint)' }}>
+                      {t.min} PTS
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div style={{ height: 1, background: 'var(--border)', margin: '24px 0' }} />
+
+            <span className="label" style={{ marginBottom: 18, display: 'block' }}>▲ SERVICE BRANCH · TERMINAL THEME</span>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 8 }}>
+              {BRANCH_LIST.map(({ key: k, label }) => {
+                const active = branch === k;
+                return (
+                  <button key={k} onClick={() => setBranch(k)} data-branch={k}
+                    style={{ all: 'unset', cursor: 'pointer', display: 'flex', flexDirection: 'column',
+                      alignItems: 'center', gap: 8, padding: '16px 6px', borderRadius: 8,
+                      border: `1px solid ${active ? 'var(--accent-line)' : 'var(--border-strong)'}`,
+                      background: active ? 'var(--accent-soft)' : 'var(--bg)' }}>
+                    <span style={{ color: active ? 'var(--accent-text)' : 'var(--text-dim)' }}>
+                      <Insignia branch={k} size={24} />
+                    </span>
+                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, whiteSpace: 'nowrap',
+                      color: active ? 'var(--text)' : 'var(--text-dim)' }}>{label}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div style={{ height: 1, background: 'var(--border)', margin: '24px 0' }} />
+
+            <span className="label" style={{ marginBottom: 18, display: 'block' }}>▲ PRIVACY & WELLNESS</span>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+              <SettingRow
+                title="Sentinel journal"
+                desc="Nightly wellness tracking, visible only to you"
+                on={state.onboarding.consented}
+                onToggle={toggleConsent}
+              />
+              <SettingRow
+                title="Platoon feed visibility"
+                desc="Share your training activity with your section"
+                on={platoonFeed}
+                onToggle={() => setPlatoonFeed((v) => !v)}
+              />
+              <SettingRow
+                title="Evening reminder"
+                desc="Quiet 2100h nudge to journal"
+                on={eveningReminder}
+                onToggle={() => setEveningReminder((v) => !v)}
+              />
+            </div>
+          </Panel>
+
+          {/* Right column */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <Panel style={{ padding: 28 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
+                <span className="label">▲ RECENT AWARDS</span>
+                <span className="mono-dim" style={{ fontSize: 11 }}>VIEW ALL →</span>
+              </div>
+              {achievements.length > 0 ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                  {achievements.slice(0, 3).map((a) => (
+                    <div key={a.key} style={{ display: 'flex', gap: 14, alignItems: 'center' }}>
+                      <BadgeMedal tier={a.tier} />
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontFamily: 'var(--font-head)', fontWeight: 700, fontSize: 15 }}>{a.name}</div>
+                        <div className="mono-dim" style={{ fontSize: 11 }}>{a.desc}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="mono-dim" style={{ fontSize: 12 }}>No awards yet. Keep training.</div>
+              )}
+            </Panel>
+
+            <Panel style={{ padding: 28 }}>
+              <span className="label" style={{ marginBottom: 6, display: 'block' }}>▲ ACCOUNT</span>
+              <div className="mono-dim" style={{ marginBottom: 18, fontSize: 11 }}>
+                SIGNED IN VIA SINGPASS · BUILD 2.4.0
+              </div>
+              <button className="btn danger full" onClick={signOut}>SIGN OUT</button>
+            </Panel>
+          </div>
         </div>
       </div>
-      <button className="secondary-button" onClick={signOut}>
-        Sign out
+    </div>
+  );
+}
+
+function SettingRow({ title, desc, on, onToggle }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16 }}>
+      <div>
+        <div style={{ fontFamily: 'var(--font-head)', fontWeight: 700, fontSize: 15, letterSpacing: '0.02em' }}>{title}</div>
+        <div style={{ color: 'var(--text-dim)', fontSize: 13, marginTop: 2 }}>{desc}</div>
+      </div>
+      <button onClick={onToggle} disabled={!onToggle}
+        style={{ all: 'unset', cursor: onToggle ? 'pointer' : 'default', flexShrink: 0,
+          width: 46, height: 26, borderRadius: 999, padding: 3,
+          background: on ? 'var(--accent)' : 'var(--bg)',
+          border: `1px solid ${on ? 'var(--accent-line)' : 'var(--border-strong)'}`,
+          transition: 'all 0.15s' }}>
+        <span style={{ display: 'block', width: 20, height: 20, borderRadius: '50%',
+          background: on ? '#fff' : 'var(--text-faint)',
+          transform: on ? 'translateX(20px)' : 'translateX(0)',
+          transition: 'transform 0.15s' }} />
       </button>
-    </section>
+    </div>
+  );
+}
+
+function BadgeMedal({ tier }) {
+  const color = tier === 'gold' ? 'var(--amber)' : tier === 'silver' ? 'var(--silver)' : '#A87B4A';
+  return (
+    <svg width="36" height="36" viewBox="0 0 36 36" fill="none" style={{ flexShrink: 0 }}>
+      <circle cx="18" cy="23" r="11" fill={color} fillOpacity="0.15" stroke={color} strokeWidth="1.5" />
+      <text x="18" y="28" textAnchor="middle" fontSize="12" fill={color} fontFamily="var(--font-head)" fontWeight="700">★</text>
+      <line x1="14" y1="12" x2="15.5" y2="5" stroke={color} strokeWidth="1.5" strokeLinecap="round" />
+      <line x1="22" y1="12" x2="20.5" y2="5" stroke={color} strokeWidth="1.5" strokeLinecap="round" />
+      <rect x="14" y="2" width="8" height="4" rx="2" fill={color} />
+    </svg>
   );
 }
 
