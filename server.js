@@ -184,13 +184,16 @@ app.post('/api/sentiment', async (req, res, next) => {
   }
 });
 
-// POST /api/moderate { text } -> { approved, flagged, distress, reason }
+// POST /api/moderate { text, context? } -> { approved, flagged, distress, reason }
+// context: 'buddy' uses the stricter Buddy Tap welfare-concern prompt; default uses the wall prompt.
 app.post('/api/moderate', async (req, res) => {
   const text = (req.body?.text || '').toString();
+  const context = req.body?.context || 'wall';
   if (!text.trim()) return res.json(MODERATE_FALLBACK);
 
+  const system = context === 'buddy' ? BUDDY_TAP_SYSTEM : MODERATE_SYSTEM;
   try {
-    return res.json(await moderateText(text));
+    return res.json(await moderateText(text, system));
   } catch (err) {
     console.error('[moderate] falling back:', err.message);
     return res.json(MODERATE_FALLBACK);
@@ -253,8 +256,8 @@ app.post('/api/trend-narrative', async (req, res) => {
   }
 });
 
-async function moderateText(text) {
-  const raw = await chatJSON(MODERATE_SYSTEM, text);
+async function moderateText(text, system = MODERATE_SYSTEM) {
+  const raw = await chatJSON(system, text);
   return {
     approved: raw.approved !== false,
     flagged: Boolean(raw.flagged),

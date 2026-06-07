@@ -893,11 +893,11 @@ function BuddyTapScreen({ state, updateState }) {
     setChecking(true);
     setBlockReason('');
 
-    const verdict = await nlpService.moderate(buddyComment.trim());
+    const verdict = await nlpService.moderateBuddy(buddyComment.trim());
     setChecking(false);
 
     if (!verdict.approved) {
-      setBlockReason(verdict.reason || 'This note was flagged. Buddy Tap is for sincere welfare concerns only.');
+      setBlockReason(verdict.reason || 'Buddy Tap is meant for genuine welfare concerns — things you have actually observed that worry you about your buddy\'s wellbeing. If you have noticed something specific, try describing that instead.');
       return;
     }
 

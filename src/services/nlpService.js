@@ -66,6 +66,23 @@ export async function moderate(text) {
   }
 }
 
+// moderateBuddy(text) -> { approved, flagged, distress, reason }
+// Stricter than moderate() — only approves genuine welfare concerns, not grievances or dislikes.
+export async function moderateBuddy(text) {
+  try {
+    const data = await postJSON('/api/moderate', { text, context: 'buddy' });
+    return {
+      approved: data.approved !== false,
+      flagged: Boolean(data.flagged),
+      distress: Boolean(data.distress),
+      reason: typeof data.reason === 'string' ? data.reason : '',
+    };
+  } catch (err) {
+    console.warn('[nlpService.moderateBuddy] fallback:', err.message);
+    return { ...MODERATE_FALLBACK };
+  }
+}
+
 // companion(message, history) -> { reply }
 // history is the full prior conversation: [{ role: 'user'|'assistant', content }].
 export async function companion(message, history = []) {
@@ -93,4 +110,4 @@ export async function trendNarrative(scores) {
   }
 }
 
-export default { analyze, moderate, companion, trendNarrative };
+export default { analyze, moderate, moderateBuddy, companion, trendNarrative };
