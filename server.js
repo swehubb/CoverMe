@@ -60,7 +60,7 @@ Critical rules:
 - crisis must only be true for explicit self-harm or suicidal ideation. General sadness, exhaustion, or 'want to die' used hyperbolically (common in Singlish) should NOT trigger crisis unless combined with explicit intent.
 - When in doubt between neutral and negative, lean negative — false negatives (missing real distress) are more harmful than false positives.`;
 
-const MODERATE_SYSTEM = `You are a content moderation engine for a peer support platform used by Singapore National Servicemen. Analyse the text and return ONLY valid JSON with no preamble, no markdown, no backticks. Schema: { approved: boolean, flagged: boolean, distress: boolean, reason: string }. approved is false if text contains: targeted harassment, doxxing (NRIC numbers in format S/T/F/G + 7 digits + letter), explicit threats, spam. flagged is true for borderline content. distress is true if the writer appears to be in emotional distress or mentions self-harm. reason is a short human-readable explanation or empty string if approved.`;
+const MODERATE_SYSTEM = `You are a content moderation engine for a peer support platform used by Singapore National Servicemen. Analyse the text and return ONLY valid JSON with no preamble, no markdown, no backticks. Schema: { approved: boolean, flagged: boolean, distress: boolean, reason: string }. approved is false if text contains ANY of: profanity or vulgar language, insults or personal attacks, mockery or ridicule of others, hostile or aggressive language, content with clear ill intent toward any person or group, targeted harassment, doxxing (NRIC numbers in format S/T/F/G + 7 digits + letter), explicit threats, spam, or any content that would make the platform feel unsafe or unwelcoming. This is a peer support space — apply a high standard. flagged is true for borderline content that is rude or dismissive without being explicitly harmful. distress is true if the writer appears to be in emotional distress or mentions self-harm. reason is a warm, gentle message (2–3 sentences) addressed directly to the writer. Acknowledge that NS is tough and emotions can run high, but redirect them to rephrase in a way that is kind and supportive. Do not just label the problem — guide them toward a better version. Example style: "It sounds like things are weighing on you, and that is completely valid. This wall is a space for lifting each other up though, so try rephrasing without the harsh language — your experience is worth sharing in a way others can receive." Return empty string if approved.`;
 
 const COMPANION_SYSTEM = `You are a compassionate AI journalling companion embedded in Cover Me, a mental wellness app for Singapore National Servicemen. Your role is to help NSmen process their thoughts and feelings through conversation.
 
@@ -184,13 +184,16 @@ app.post('/api/sentiment', async (req, res, next) => {
   }
 });
 
-// POST /api/moderate { text } -> { approved, flagged, distress, reason }
+// POST /api/moderate { text, context? } -> { approved, flagged, distress, reason }
+// context: 'buddy' uses the stricter Buddy Tap welfare-concern prompt; default uses the wall prompt.
 app.post('/api/moderate', async (req, res) => {
   const text = (req.body?.text || '').toString();
+  const context = req.body?.context || 'wall';
   if (!text.trim()) return res.json(MODERATE_FALLBACK);
 
+  const system = context === 'buddy' ? BUDDY_TAP_SYSTEM : MODERATE_SYSTEM;
   try {
-    return res.json(await moderateText(text));
+    return res.json(await moderateText(text, system));
   } catch (err) {
     console.error('[moderate] falling back:', err.message);
     return res.json(MODERATE_FALLBACK);
@@ -253,8 +256,8 @@ app.post('/api/trend-narrative', async (req, res) => {
   }
 });
 
-async function moderateText(text) {
-  const raw = await chatJSON(MODERATE_SYSTEM, text);
+async function moderateText(text, system = MODERATE_SYSTEM) {
+  const raw = await chatJSON(system, text);
   return {
     approved: raw.approved !== false,
     flagged: Boolean(raw.flagged),

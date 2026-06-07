@@ -18,12 +18,17 @@ const ENLIST_NAV = [
   { id: 'profile', label: 'RECORD', glyph: '◮', path: '/profile' },
 ];
 
-export default function CommandRail({ branch = 'army', activeModule = 'serve', onSignOut, onModuleSwitch }) {
+export default function CommandRail({ branch = 'army', activeModule = 'serve', onSignOut, onModuleChange }) {
   const navigate = useNavigate();
   const { pathname } = useLocation();
 
   const nav = activeModule === 'enlist' ? ENLIST_NAV : SERVE_NAV;
   const otherModule = activeModule === 'enlist' ? 'serve' : 'enlist';
+
+  const switchModule = (m) => {
+    onModuleChange?.(m);
+    navigate(`/${m}`);
+  };
 
   const isActive = (path) => {
     if (path === '/serve' || path === '/enlist') return pathname === path;
@@ -52,16 +57,18 @@ export default function CommandRail({ branch = 'army', activeModule = 'serve', o
         ))}
       </nav>
 
-      <button
-        className="cmd-nav-btn"
-        onClick={() => onModuleSwitch && onModuleSwitch(otherModule)}
-        title={`Switch to ${otherModule === 'enlist' ? 'Enlist' : 'Serve'} module`}
-        style={{ marginBottom: 8, opacity: 0.55 }}
-      >
-        <span className="cmd-nav-dot" />
-        <span className="cmd-nav-glyph" style={{ fontSize: 14 }}>⇄</span>
-        <span className="cmd-nav-label">{otherModule.toUpperCase()}</span>
-      </button>
+      <div className="cmd-module-toggle">
+        <button
+          className={`cmd-module-btn${activeModule === 'enlist' ? ' active' : ''}`}
+          onClick={() => switchModule('enlist')}
+          title="Enlist module"
+        >ENL</button>
+        <button
+          className={`cmd-module-btn${activeModule === 'serve' ? ' active' : ''}`}
+          onClick={() => switchModule('serve')}
+          title="Serve module"
+        >SRV</button>
+      </div>
 
       <button className="cmd-signout" onClick={onSignOut} title="Sign out">
         ⏻

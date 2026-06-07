@@ -26,7 +26,7 @@ import Award from './components/ui/Award';
 import SvgLineChart from './components/ui/SvgLineChart';
 import Insignia from './components/shared/Insignia';
 import { peerIntelPosts } from './data/mockPeerIntel';
-import { peerWallPosts, wallPhases, wallTopics } from './data/mockPeerWall';
+import { peerWallPosts, wallPhases } from './data/mockPeerWall';
 import { buddyTapSelectableMembers } from './data/mockPlatoon';
 import nlpService from './services/nlpService';
 import { notify, crisisResources } from './services/mockNotification';
@@ -262,7 +262,7 @@ function AppShell({ state, updateState }) {
         branch={branch}
         activeModule={activeModule}
         onSignOut={signOut}
-        onModuleSwitch={setActiveModule}
+        onModuleChange={setActiveModule}
       />
       <div className="shell-main">
         <TopBar branch={branch} onBranchChange={setBranch} profile={profile} />
@@ -507,7 +507,7 @@ function PeerSupportWallScreen({ state, updateState }) {
             },
           }))
         }
-        onVote={(postId, direction) =>
+        onVote={(postId, upDelta, downDelta) =>
           updateState((current) => ({
             ...current,
             community: {
@@ -516,8 +516,8 @@ function PeerSupportWallScreen({ state, updateState }) {
                 post.id === postId
                   ? {
                       ...post,
-                      upvotes: post.upvotes + (direction === 'up' ? 1 : 0),
-                      downvotes: post.downvotes + (direction === 'down' ? 1 : 0),
+                      upvotes: Math.max(0, (post.upvotes || 0) + upDelta),
+                      downvotes: Math.max(0, (post.downvotes || 0) + downDelta),
                     }
                   : post,
               ),
@@ -553,12 +553,13 @@ function FeedScreenContent({
   const [postTitle, setPostTitle] = useState('');
   const [postDraft, setPostDraft] = useState('');
   const [postPhase, setPostPhase] = useState(wallPhases[0].value);
-  const [postTopic, setPostTopic] = useState(wallTopics[0]);
   const [composeError, setComposeError] = useState('');
   const [distressPrompt, setDistressPrompt] = useState(false);
   const [posting, setPosting] = useState(false);
   const [replyDrafts, setReplyDrafts] = useState({});
+  const [replyErrors, setReplyErrors] = useState({});
   const [replyingToId, setReplyingToId] = useState(null);
+  const [userVotes, setUserVotes] = useState({});
 
   const filterKey = feedType === 'intel' ? 'category' : isWall ? 'phase' : 'topic';
   const filterOptions = isWall
@@ -581,12 +582,31 @@ function FeedScreenContent({
     setShowCompose(false);
   };
 
+  const handleVote = (postId, direction) => {
+    const current = userVotes[postId];
+    let upDelta = 0;
+    let downDelta = 0;
+    let newVote;
+
+    if (direction === 'up') {
+      if (current === 'up') { upDelta = -1; newVote = null; }
+      else if (current === 'down') { upDelta = 1; downDelta = -1; newVote = 'up'; }
+      else { upDelta = 1; newVote = 'up'; }
+    } else {
+      if (current === 'down') { downDelta = -1; newVote = null; }
+      else if (current === 'up') { downDelta = 1; upDelta = -1; newVote = 'down'; }
+      else { downDelta = 1; newVote = 'down'; }
+    }
+
+    setUserVotes((v) => ({ ...v, [postId]: newVote }));
+    onVote?.(postId, upDelta, downDelta);
+  };
+
   const publishWallPost = (distressFlag) => {
     onAddPost({
       id: Date.now(),
       author: 'Anonymous NSF',
       phase: postPhase,
-      topic: postTopic,
       title: postTitle.trim() || undefined,
       content: postDraft.trim(),
       createdAt: getToday().toISOString(),
@@ -621,7 +641,7 @@ function FeedScreenContent({
     setPosting(false);
 
     if (!verdict.approved) {
-      setComposeError(verdict.reason || 'This post was flagged. Please rephrase to keep this a supportive space.');
+      setComposeError(verdict.reason || 'We get it — NS is tough and things can pile up. This wall is here for everyone though, so try rephrasing with a bit more kindness. Your story matters and others want to hear it.');
       return;
     }
 
@@ -634,9 +654,21 @@ function FeedScreenContent({
     publishWallPost(Boolean(verdict.distress) || distressPrompt);
   };
 
-  const submitReply = (postId) => {
+  const submitReply = async (postId) => {
     const draft = (replyDrafts[postId] || '').trim();
     if (!draft || !onReply) return;
+
+    if (moderate) {
+      const verdict = await moderate(draft);
+      if (!verdict.approved) {
+        setReplyErrors((e) => ({
+          ...e,
+          [postId]: verdict.reason || 'Replies here are meant to support, not tear down. Try coming at it from a place of encouragement — even a small shift in tone makes a real difference to someone who is struggling.',
+        }));
+        return;
+      }
+    }
+    setReplyErrors((e) => ({ ...e, [postId]: '' }));
 
     onReply(postId, {
       id: `${postId}-${Date.now()}`,
@@ -681,9 +713,6 @@ function FeedScreenContent({
                 <div className="badge-row">
                   <span className="info-badge">{isWall ? phaseLabel(post.phase) : post[filterKey]}</span>
                   {isWall && post.topic && <span className="info-badge">{post.topic}</span>}
-                  {isWall && post.distressFlag && (
-                    <span className="info-badge distress-badge">Support surfaced</span>
-                  )}
                 </div>
                 {feedType === 'wall' && (
                   <h3 className="feed-card-title">{post.title || post.topic}</h3>
@@ -693,20 +722,20 @@ function FeedScreenContent({
                   <div className="feed-thread-meta">
                     <button
                       type="button"
-                      className="thread-stat thread-vote"
+                      className={`thread-stat thread-vote${userVotes[post.id] === 'up' ? ' vote-active' : ''}`}
                       onClick={(event) => {
                         event.stopPropagation();
-                        onVote?.(post.id, 'up');
+                        handleVote(post.id, 'up');
                       }}
                     >
                       ▲ {post.upvotes || 0}
                     </button>
                     <button
                       type="button"
-                      className="thread-stat thread-vote"
+                      className={`thread-stat thread-vote${userVotes[post.id] === 'down' ? ' vote-active' : ''}`}
                       onClick={(event) => {
                         event.stopPropagation();
-                        onVote?.(post.id, 'down');
+                        handleVote(post.id, 'down');
                       }}
                     >
                       ▼ {post.downvotes || 0}
@@ -744,6 +773,9 @@ function FeedScreenContent({
                           placeholder="Reply with encouragement, advice, or what helped you."
                           rows={3}
                         />
+                        {replyErrors[post.id] && (
+                          <p className="inline-warning">{replyErrors[post.id]}</p>
+                        )}
                         <div className="reply-actions">
                           <button type="button" className="secondary-button reply-button" onClick={() => setReplyingToId(null)}>
                             Cancel
@@ -779,16 +811,6 @@ function FeedScreenContent({
                   {wallPhases.map((phase) => (
                     <option key={phase.value} value={phase.value}>
                       {phase.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                <span>Topic</span>
-                <select value={postTopic} onChange={(event) => setPostTopic(event.target.value)}>
-                  {wallTopics.map((topic) => (
-                    <option key={topic} value={topic}>
-                      {topic}
                     </option>
                   ))}
                 </select>
@@ -837,7 +859,7 @@ function FeedScreenContent({
             </div>
           ) : (
             <button className="primary-button" onClick={addPost} disabled={posting}>
-              {posting ? 'Checking…' : 'Submit to moderation queue'}
+              {posting ? 'Checking…' : 'Post'}
             </button>
           )}
         </Modal>
@@ -866,11 +888,11 @@ function BuddyTapScreen({ state, updateState }) {
     setChecking(true);
     setBlockReason('');
 
-    const verdict = await nlpService.moderate(buddyComment.trim());
+    const verdict = await nlpService.moderateBuddy(buddyComment.trim());
     setChecking(false);
 
     if (!verdict.approved) {
-      setBlockReason(verdict.reason || 'This note was flagged. Buddy Tap is for sincere welfare concerns only.');
+      setBlockReason(verdict.reason || 'Buddy Tap is meant for genuine welfare concerns — things you have actually observed that worry you about your buddy\'s wellbeing. If you have noticed something specific, try describing that instead.');
       return;
     }
 
