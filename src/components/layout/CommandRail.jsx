@@ -23,6 +23,7 @@ export default function CommandRail({ branch = 'army', activeModule = 'serve', o
   const { pathname } = useLocation();
 
   const nav = activeModule === 'enlist' ? ENLIST_NAV : SERVE_NAV;
+  const otherModule = activeModule === 'enlist' ? 'serve' : 'enlist';
 
   const switchModule = (m) => {
     onModuleChange?.(m);
