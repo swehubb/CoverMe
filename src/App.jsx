@@ -1514,7 +1514,12 @@ function JournalScreen({ state, updateState }) {
                 </div>
               ))}
             </div>
-            <button className="btn neutral full" onClick={() => setCrisisState(false)}>I'VE SEEN THIS → CLOSE</button>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 8 }}>
+              <button className="primary-button" onClick={() => { setCrisisState(false); navigate('/escalation?crisis=true'); }}>
+                See your support options →
+              </button>
+              <button className="btn neutral full" onClick={() => setCrisisState(false)}>I'VE SEEN THIS → CLOSE</button>
+            </div>
           </Panel>
         </div>
       )}
@@ -1574,7 +1579,8 @@ function EscalationScreen({ state }) {
       />
 
       <div className="chart-card sentinel-chart-card">
-        <div className="chart-caption">Your last 7 days — scored out of 100, only you can see this.</div>
+        <div className="label" style={{ color: 'var(--accent-text)', marginBottom: 6 }}>◈ SENTINEL · WELLNESS TREND</div>
+        <div className="chart-caption">Your private journal entries from the last 7 days, scored out of 100 by Sentinel. Only you can see this.</div>
         <div className="sentinel-chart-canvas">
           <Line options={chartOptions({ yLabel: true, yTicks: true, min: 0, max: 100 })} data={chartData} />
         </div>
