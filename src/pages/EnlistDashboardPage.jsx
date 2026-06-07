@@ -1,4 +1,3 @@
-import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Panel from '../components/ui/Panel';
 import Stat from '../components/ui/Stat';
@@ -45,13 +44,6 @@ export default function EnlistDashboardPage({ state, updateState, phase }) {
     return Math.max(0, Math.min(100, p + s + r));
   })() : null;
   const ordPct = Math.min(100, Math.round(((730 - ordDays) / 730) * 100));
-
-  useEffect(() => {
-    updateState((current) => {
-      if (current.ui.activeModule === 'enlist') return current;
-      return { ...current, ui: { ...current.ui, activeModule: 'enlist' } };
-    });
-  }, [updateState]);
 
   return (
     <div className="dash-page">

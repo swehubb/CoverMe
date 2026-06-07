@@ -189,20 +189,14 @@ function App() {
 function ModuleHomeRoute({ module, state, updateState, phase }) {
   useEffect(() => {
     updateState((current) => {
-      if (current.ui.activeModule === module) {
-        return current;
-      }
-
-      return {
-        ...current,
-        ui: {
-          ...current.ui,
-          activeModule: module,
-        },
-      };
+      if (current.ui.activeModule === module) return current;
+      return { ...current, ui: { ...current.ui, activeModule: module } };
     });
   }, [module, updateState]);
 
+  if (module === 'enlist') {
+    return <EnlistDashboardPage state={state} updateState={updateState} phase={phase} />;
+  }
   return <HomeDashboard state={state} phase={phase} activeModule={module} />;
 }
 
@@ -246,6 +240,7 @@ function AppShell({ state, updateState }) {
       ui: { ...current.ui, activeModule: module },
     }));
     setAuthCurrentModule(module);
+    navigate(`/${module}`);
   };
 
   const setBranch = (b) => {
@@ -267,6 +262,7 @@ function AppShell({ state, updateState }) {
         branch={branch}
         activeModule={activeModule}
         onSignOut={signOut}
+        onModuleSwitch={setActiveModule}
       />
       <div className="shell-main">
         <TopBar branch={branch} onBranchChange={setBranch} profile={profile} />
@@ -275,7 +271,7 @@ function AppShell({ state, updateState }) {
             <Route path="/home" element={<Navigate to={`/${activeModule}`} replace />} />
             <Route
               path="/enlist"
-              element={<EnlistDashboardPage state={state} updateState={updateState} phase={phase} />}
+              element={<ModuleHomeRoute module="enlist" state={state} updateState={updateState} phase={phase} />}
             />
             <Route
               path="/serve"
