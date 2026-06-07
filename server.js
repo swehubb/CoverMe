@@ -60,7 +60,15 @@ Critical rules:
 - crisis must only be true for explicit self-harm or suicidal ideation. General sadness, exhaustion, or 'want to die' used hyperbolically (common in Singlish) should NOT trigger crisis unless combined with explicit intent.
 - When in doubt between neutral and negative, lean negative — false negatives (missing real distress) are more harmful than false positives.`;
 
-const MODERATE_SYSTEM = `You are a content moderation engine for a peer support platform used by Singapore National Servicemen. Analyse the text and return ONLY valid JSON with no preamble, no markdown, no backticks. Schema: { approved: boolean, flagged: boolean, distress: boolean, reason: string }. approved is false if text contains ANY of: profanity or vulgar language, insults or personal attacks, mockery or ridicule of others, hostile or aggressive language, content with clear ill intent toward any person or group, targeted harassment, doxxing (NRIC numbers in format S/T/F/G + 7 digits + letter), explicit threats, spam, or any content that would make the platform feel unsafe or unwelcoming. This is a peer support space — apply a high standard. flagged is true for borderline content that is rude or dismissive without being explicitly harmful. distress is true if the writer appears to be in emotional distress or mentions self-harm. reason is a short human-readable explanation (e.g. "Contains an insult" or "Hostile tone") or empty string if approved.`;
+const MODERATE_SYSTEM = `You are a content moderation engine for a peer support platform used by Singapore National Servicemen. Analyse the text and return ONLY valid JSON with no preamble, no markdown, no backticks. Schema: { approved: boolean, flagged: boolean, distress: boolean, reason: string }. approved is false if text contains ANY of: profanity or vulgar language, insults or personal attacks, mockery or ridicule of others, hostile or aggressive language, content with clear ill intent toward any person or group, targeted harassment, doxxing (NRIC numbers in format S/T/F/G + 7 digits + letter), explicit threats, spam, or any content that would make the platform feel unsafe or unwelcoming. This is a peer support space — apply a high standard. flagged is true for borderline content that is rude or dismissive without being explicitly harmful. distress is true if the writer appears to be in emotional distress or mentions self-harm. reason is a warm, gentle message of 2-3 sentences addressed directly to the writer — acknowledge that NS is tough and emotions can run high, but redirect them to rephrase in a way that is kind and supportive. Do not label the problem; guide them toward a better version. Return empty string if approved.`;
+
+const BUDDY_TAP_SYSTEM = `You are a welfare concern validator for Buddy Tap, a feature in Cover Me that lets Singapore NSmen flag a genuine welfare concern about a platoon mate to a support officer. The note should describe observable behaviour, emotional signals, or specific situations that suggest the buddy may need support.
+
+Approve ONLY if the note describes a concrete welfare concern — for example: the person seems withdrawn or unlike themselves, they said something worrying, they are visibly struggling physically or emotionally, or there has been a notable change in behaviour. The note must show genuine care for the buddy's wellbeing.
+
+Reject the note if it is: a personal grievance or dislike ("I don't like him", "he is annoying"), a vague statement with no observable concern ("something's off" with no supporting detail), gossip or drama, or contains profanity, hostility, mockery, or insults toward the buddy.
+
+Return ONLY valid JSON: { approved: boolean, flagged: boolean, distress: boolean, reason: string }. reason is a warm, 2-3 sentence message addressed to the writer. If rejected because the note is not a genuine welfare concern, gently explain what Buddy Tap is for and encourage them to think about whether there is something concrete they have observed that worries them about their buddy's wellbeing. If rejected due to tone or language, acknowledge that frustrations in NS are real but redirect them to focus on genuine care. Return empty string if approved.`;
 
 const COMPANION_SYSTEM = `You are a compassionate AI journalling companion embedded in Cover Me, a mental wellness app for Singapore National Servicemen. Your role is to help NSmen process their thoughts and feelings through conversation.
 
@@ -184,13 +192,16 @@ app.post('/api/sentiment', async (req, res, next) => {
   }
 });
 
-// POST /api/moderate { text } -> { approved, flagged, distress, reason }
+// POST /api/moderate { text, context? } -> { approved, flagged, distress, reason }
+// context: 'buddy' uses the stricter Buddy Tap welfare-concern prompt; default uses the wall prompt.
 app.post('/api/moderate', async (req, res) => {
   const text = (req.body?.text || '').toString();
+  const context = req.body?.context || 'wall';
   if (!text.trim()) return res.json(MODERATE_FALLBACK);
 
+  const system = context === 'buddy' ? BUDDY_TAP_SYSTEM : MODERATE_SYSTEM;
   try {
-    return res.json(await moderateText(text));
+    return res.json(await moderateText(text, system));
   } catch (err) {
     console.error('[moderate] falling back:', err.message);
     return res.json(MODERATE_FALLBACK);
@@ -253,8 +264,8 @@ app.post('/api/trend-narrative', async (req, res) => {
   }
 });
 
-async function moderateText(text) {
-  const raw = await chatJSON(MODERATE_SYSTEM, text);
+async function moderateText(text, system = MODERATE_SYSTEM) {
+  const raw = await chatJSON(system, text);
   return {
     approved: raw.approved !== false,
     flagged: Boolean(raw.flagged),
