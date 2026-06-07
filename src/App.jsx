@@ -646,7 +646,7 @@ function FeedScreenContent({
     setPosting(false);
 
     if (!verdict.approved) {
-      setComposeError(verdict.reason || 'This post was flagged. Please rephrase to keep this a supportive space.');
+      setComposeError(verdict.reason || 'We get it — NS is tough and things can pile up. This wall is here for everyone though, so try rephrasing with a bit more kindness. Your story matters and others want to hear it.');
       return;
     }
 
@@ -668,7 +668,7 @@ function FeedScreenContent({
       if (!verdict.approved) {
         setReplyErrors((e) => ({
           ...e,
-          [postId]: verdict.reason || 'This reply was flagged. Please keep replies supportive and respectful.',
+          [postId]: verdict.reason || 'Replies here are meant to support, not tear down. Try coming at it from a place of encouragement — even a small shift in tone makes a real difference to someone who is struggling.',
         }));
         return;
       }
@@ -718,9 +718,6 @@ function FeedScreenContent({
                 <div className="badge-row">
                   <span className="info-badge">{isWall ? phaseLabel(post.phase) : post[filterKey]}</span>
                   {isWall && post.topic && <span className="info-badge">{post.topic}</span>}
-                  {isWall && post.distressFlag && (
-                    <span className="info-badge distress-badge">Support surfaced</span>
-                  )}
                 </div>
                 {feedType === 'wall' && (
                   <h3 className="feed-card-title">{post.title || post.topic}</h3>
