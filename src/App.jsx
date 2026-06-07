@@ -975,12 +975,14 @@ function BuddyTapScreen({ state, updateState }) {
       {thresholdNotice && (
         <Modal title={thresholdNotice.title} onClose={() => setThresholdNotice(null)}>
           <p>{thresholdNotice.message}</p>
-          <p>{thresholdNotice.body}</p>
-          <ul className="resource-list">
-            {thresholdNotice.resources.map((line) => (
-              <li key={line}>{line}</li>
-            ))}
-          </ul>
+          {thresholdNotice.body && <p>{thresholdNotice.body}</p>}
+          {thresholdNotice.resources?.length > 0 && (
+            <ul className="resource-list">
+              {thresholdNotice.resources.map((line) => (
+                <li key={line}>{line}</li>
+              ))}
+            </ul>
+          )}
           <small>{thresholdNotice.footer}</small>
           <button className="primary-button" onClick={() => setThresholdNotice(null)}>
             Close
