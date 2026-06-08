@@ -2452,6 +2452,8 @@ function ProfileScreen({ state, updateState, activeModule }) {
 
   const setGoal = (key) =>
     updateState((c) => ({ ...c, onboarding: { ...c.onboarding, ipptGoal: key } }));
+  const setBranch = (b) =>
+    updateState((c) => ({ ...c, ui: { ...c.ui, branch: b } }));
   const setModule = (module) => {
     updateState((c) => ({ ...c, ui: { ...c.ui, activeModule: module } }));
     navigate(`/${module}`);
@@ -2468,6 +2470,13 @@ function ProfileScreen({ state, updateState, activeModule }) {
     { key: 'Pass with Incentive', label: 'PASS + INCENTIVE', range: '61 - 74', award: '$200' },
     { key: 'Silver', label: 'SILVER', range: '75 - 84', award: '$300' },
     { key: 'Gold', label: 'GOLD', range: '≥ 85', award: '$500' },
+  ];
+
+  const BRANCH_LIST = [
+    { key: 'army', label: 'LAND', desc: 'Army' },
+    { key: 'navy', label: 'SEA', desc: 'Navy' },
+    { key: 'air', label: 'AIR', desc: 'Air Force' },
+    { key: 'dis', label: 'DIGITAL', desc: 'Digital Service' },
   ];
 
   const BRANCH_FORCE_LABEL = { army: 'LAND FORCE', navy: 'SEA FORCE', air: 'AIR FORCE', dis: 'DIGITAL FORCE' };
@@ -2543,6 +2552,30 @@ function ProfileScreen({ state, updateState, activeModule }) {
                 return (
                   <button key={item.key} className={active ? 'active' : ''} onClick={() => setModule(item.key)} type="button">
                     <span>{item.label}</span>
+                    <small>{item.desc}</small>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div style={{ height: 1, background: 'var(--border)', margin: '24px 0' }} />
+
+            <span className="label" style={{ marginBottom: 12, display: 'block' }}>▲ SERVICE THEME</span>
+            <div className="record-branch-grid">
+              {BRANCH_LIST.map((item) => {
+                const active = branch === item.key;
+                return (
+                  <button
+                    key={item.key}
+                    type="button"
+                    className={active ? 'active' : ''}
+                    onClick={() => setBranch(item.key)}
+                    data-branch={item.key}
+                  >
+                    <span className="record-branch-icon">
+                      <Insignia branch={item.key} size={24} />
+                    </span>
+                    <span className="record-branch-label">{item.label}</span>
                     <small>{item.desc}</small>
                   </button>
                 );
