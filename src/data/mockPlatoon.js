@@ -1,5 +1,5 @@
 export const platoonMembers = [
-  { id: 'platoon-01', name: 'Wei', rank: 'REC', role: 'nsf', section: '1', pes: 'B1', isSelf: true },
+  { id: 'platoon-01', name: 'Tan An Wei', rank: 'REC', role: 'nsf', section: '1', pes: 'B1', isSelf: true },
   { id: 'platoon-02', name: 'Marcus Ng', rank: 'LTA', role: 'platoon-commander', section: null, pes: 'A' },
   { id: 'platoon-03', name: 'Amirul Hassan', rank: '3SG', role: 'section-commander', section: '1', pes: 'B1' },
   { id: 'platoon-04', name: 'Jonathan Tay', rank: 'CPL', role: 'peer-support', section: '1', pes: 'B1' },

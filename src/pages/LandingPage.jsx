@@ -6,11 +6,13 @@ import Panel from '../components/ui/Panel';
 
 function normalizeProfile(profile) {
   if (!profile) return null;
-  const fullName = profile.fullName || profile.name || 'WEI';
+  const rawName = profile.fullName || profile.name;
+  const fullName = !rawName || rawName.toUpperCase() === 'WEI' ? 'Tan An Wei' : rawName;
   const pesStatus = profile.pesStatus || profile.pes || 'B1';
   return {
     ...profile,
     fullName,
+    name: fullName,
     pesStatus,
     vocation: profile.vocation || (profile.unit?.includes('SIR') ? 'Infantry' : 'General'),
     unit: profile.unit || '3 SIR',
@@ -56,7 +58,6 @@ export default function LandingPage({ state, updateState }) {
           </p>
         </div>
         <div className="auth-footer">
-          <span>BUILD 2.4.0</span>
           <span>SECURE CHANNEL</span>
           <span style={{ color: 'var(--success)' }}><span className="blink">●</span> ONLINE</span>
         </div>
@@ -90,9 +91,6 @@ export default function LandingPage({ state, updateState }) {
             ))}
           </div>
         </Panel>
-        <div className="mono-dim" style={{ marginTop: 20, textAlign: 'center' }}>
-          GOVTECH × MINDEF · UNCLASSIFIED · FOR DEMONSTRATION
-        </div>
       </div>
     </div>
   );

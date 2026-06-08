@@ -45,6 +45,7 @@ export default function ConsentPage({ state, updateState }) {
     updateState((current) => ({
       ...current,
       onboarding: { ...current.onboarding, consented: true, journalOptIn: optIn },
+      settings: { ...current.settings, sentinelEnabled: optIn, eveningReminder: reminder },
     }));
     navigate('/home');
   };
@@ -69,7 +70,6 @@ export default function ConsentPage({ state, updateState }) {
 
         <div className="consent-grid">
           <Panel ticks elevated style={{ padding: 34 }}>
-            <div style={{ fontSize: 34, color: 'var(--accent-text)', marginBottom: 18 }}>◈</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
               {[
                 ['ENCRYPTED & PRIVATE', 'Entries are encrypted end-to-end. No commander, peer leader, or admin can ever read them.'],

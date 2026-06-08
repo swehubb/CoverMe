@@ -92,7 +92,6 @@ export default function EnlistDashboardPage({ state, updateState, phase }) {
       </Panel>
 
       {/* Feature grid */}
-      <div className="label" style={{ margin: '30px 0 14px' }}>▲ MODULE DECK</div>
       <div className="dash-features-grid">
         {FEATURES.map((f) => (
           <button key={f.id} className="feat-card" onClick={() => navigate(f.path)}>
@@ -103,7 +102,7 @@ export default function EnlistDashboardPage({ state, updateState, phase }) {
               </div>
               <div style={{ marginTop: 'auto' }}>
                 <div className="h-title" style={{ fontSize: 20, marginBottom: 6 }}>{f.label}</div>
-                <div style={{ color: 'var(--text-dim)', fontSize: 13.5, lineHeight: 1.45, marginBottom: 14 }}>{f.desc}</div>
+                <div className="feature-card-copy" style={{ color: 'var(--text-dim)', fontSize: 13.5, lineHeight: 1.45, marginBottom: 14 }}>{f.desc}</div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <span className="feat-card-arrow">ENTER MODULE →</span>
                 </div>

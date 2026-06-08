@@ -1,5 +1,5 @@
 export const mockUser = {
-  name: 'Wei',
+  name: 'Tan An Wei',
   nric: 'T0XXXXXX',
   pes: 'B1',
   unit: '3 SIR',

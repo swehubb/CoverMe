@@ -5,9 +5,10 @@ import Award from '../components/ui/Award';
 import Stat from '../components/ui/Stat';
 
 const GOAL_TIERS = [
-  { key: 'Pass',   min: 61, label: 'PASS',   sub: 'Meet the standard',   note: '≥ 61 PTS · $200 award' },
-  { key: 'Silver', min: 75, label: 'SILVER', sub: 'Above standard',      note: '≥ 75 PTS · $500 award' },
-  { key: 'Gold',   min: 85, label: 'GOLD',   sub: 'Peak conditioning',   note: '≥ 85 PTS · $500 award' },
+  { key: 'Pass', label: 'PASS', range: '51 - 60 points', award: '$0', sub: 'Meet the standard' },
+  { key: 'Pass with Incentive', label: 'PASS WITH INCENTIVE', range: '61 - 74 points', award: '$200', sub: 'Meet the incentive band' },
+  { key: 'Silver', label: 'SILVER', range: '75 - 84 points', award: '$300', sub: 'Above standard' },
+  { key: 'Gold', label: 'GOLD', range: '≥ 85 points', award: '$500', sub: 'Peak conditioning' },
 ];
 
 export default function GoalSetupPage({ state, updateState }) {
@@ -86,13 +87,13 @@ export default function GoalSetupPage({ state, updateState }) {
                       {active && <span style={{ width: 9, height: 9, borderRadius: '50%', background: 'var(--accent-text)' }} />}
                     </span>
                   </div>
-                  <div className="goal-pts">
-                    {tier.min}<span className="goal-pts-unit"> PTS</span>
+                  <div className="goal-pts goal-pts-range">
+                    {tier.range}
                   </div>
-                  <div className="h-title" style={{ fontSize: 26, marginTop: 12, letterSpacing: '0.02em' }}>{tier.label}</div>
+                  <div className="h-title goal-tier-title">{tier.label}</div>
                   <div style={{ color: 'var(--text-dim)', fontSize: 15, marginTop: 4 }}>{tier.sub}</div>
                   <div className="hr" style={{ margin: '20px 0 14px' }} />
-                  <div className="mono-dim" style={{ color: 'var(--accent-text)', fontSize: 12.5 }}>{tier.note}</div>
+                  <div className="mono-dim" style={{ color: 'var(--accent-text)', fontSize: 12.5 }}>AWARD · {tier.award}</div>
                 </Panel>
               </button>
             );

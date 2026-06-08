@@ -64,6 +64,10 @@ const defaultState = {
     ipptGoal: '',
     consented: false,
   },
+  settings: {
+    sentinelEnabled: true,
+    eveningReminder: true,
+  },
   ippt: {
     attempts: [
       { date: '2026-01-12', pushups: 28, situps: 30, runSeconds: 840 },
@@ -107,12 +111,14 @@ const defaultState = {
 function normalizeProfile(profile) {
   if (!profile) return null;
 
-  const fullName = profile.fullName || profile.name || 'WEI';
+  const rawName = profile.fullName || profile.name;
+  const fullName = !rawName || rawName.toUpperCase() === 'WEI' ? 'Tan An Wei' : rawName;
   const pesStatus = profile.pesStatus || profile.pes || 'B1';
 
   return {
     ...profile,
     fullName,
+    name: fullName,
     pesStatus,
     vocation: profile.vocation || (profile.unit?.includes('SIR') ? 'Infantry' : 'General'),
     unit: profile.unit || '3 SIR',
@@ -147,6 +153,7 @@ function loadState() {
         ...defaultState,
         auth: { ...defaultState.auth, ...parsed.auth },
         onboarding: { ...defaultState.onboarding, ...parsed.onboarding },
+        settings: { ...defaultState.settings, ...parsed.settings },
       };
     }
     return {
@@ -154,6 +161,7 @@ function loadState() {
       ...parsed,
       auth: { ...defaultState.auth, ...parsed.auth },
       onboarding: { ...defaultState.onboarding, ...parsed.onboarding },
+      settings: { ...defaultState.settings, ...parsed.settings },
       ippt: { ...defaultState.ippt, ...parsed.ippt },
       journal: { ...defaultState.journal, ...parsed.journal },
       community: { ...defaultState.community, ...parsed.community },
@@ -267,7 +275,7 @@ function AppShell({ state, updateState }) {
         onModuleChange={setActiveModule}
       />
       <div className="shell-main">
-        <TopBar branch={branch} onBranchChange={setBranch} profile={profile} />
+        <TopBar branch={branch} activeModule={activeModule} onModuleChange={setActiveModule} profile={profile} />
         <main className="screen-body scroll">
           <Routes>
             <Route path="/home" element={<Navigate to={`/${activeModule}`} replace />} />
@@ -448,7 +456,6 @@ function HomeDashboard({ state, phase, activeModule }) {
         </div>
       </Panel>
 
-      <span className="label" style={{ margin: '30px 0 14px', display: 'block' }}>▲ MODULE DECK</span>
       <div className="dash-features-grid">
         {moduleContent.detailBlocks.map((block) => (
           <button key={block.title} className="feat-card" onClick={() => navigate(block.to)}>
@@ -458,7 +465,7 @@ function HomeDashboard({ state, phase, activeModule }) {
               </div>
               <div style={{ marginTop: 'auto' }}>
                 <div className="h-title" style={{ fontSize: 20, marginBottom: 6 }}>{block.title.toUpperCase()}</div>
-                <div style={{ color: 'var(--text-dim)', fontSize: 13.5, lineHeight: 1.45, marginBottom: 14 }}>{block.body}</div>
+                <div className="feature-card-copy" style={{ color: 'var(--text-dim)', fontSize: 13.5, lineHeight: 1.45, marginBottom: 14 }}>{block.body}</div>
                 <span className="feat-card-arrow">ENTER MODULE →</span>
               </div>
             </Panel>
@@ -938,7 +945,6 @@ function BuddyTapScreen({ state, updateState }) {
         subtitle="Anonymous single-action concern flag. Three independent taps trigger a supportive message directly to the person."
       />
       <div className="badge-row">
-        <span className="info-badge">Taps this week: {weeklyCount}</span>
         <span className="info-badge">No commander is notified. No one is identified.</span>
       </div>
       <div className="buddy-card">
@@ -1104,7 +1110,7 @@ function TrainScreen({ state, updateState }) {
       }
     : null;
 
-  const GOAL_MAP  = { Gold: 85, Silver: 75, 'Pass with Incentive': 61, Pass: 61 };
+  const GOAL_MAP  = { Gold: 85, Silver: 75, 'Pass with Incentive': 61, Pass: 51 };
   const goalName  = state.onboarding.ipptGoal || 'Pass';
   const goalScore = GOAL_MAP[goalName] ?? 61;
 
@@ -1219,8 +1225,8 @@ function TrainScreen({ state, updateState }) {
         <span className="label" style={{ marginBottom: 18, display: 'block' }}>▲ PERSONAL BESTS · ALL TIME</span>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 0 }}>
           {[
-            { label: 'PUSH-UPS',  value: pbs ? pbs.pushups              : '—', unit: 'REPS',  color: 'var(--accent-text)' },
-            { label: 'SIT-UPS',   value: pbs ? pbs.situps               : '—', unit: 'REPS',  color: 'var(--accent-text)' },
+            { label: 'PUSH-UPS',  value: pbs ? pbs.pushups              : '—', unit: 'REPS',  color: 'var(--amber)' },
+            { label: 'SIT-UPS',   value: pbs ? pbs.situps               : '—', unit: 'REPS',  color: 'var(--amber)' },
             { label: '2.4KM RUN', value: pbs ? formatRunTime(pbs.runSeconds) : '—', unit: 'MM:SS', color: 'var(--amber)' },
           ].map(({ label, value, unit, color }, i, arr) => (
             <div key={label} style={{ textAlign: 'center', padding: '8px 16px', borderRight: i < arr.length - 1 ? '1px solid var(--border)' : 'none' }}>
@@ -1330,7 +1336,7 @@ function TrainScreen({ state, updateState }) {
           <span className="label" style={{ marginBottom: 16, display: 'block' }}>▲ ATTEMPT HISTORY</span>
           {attempts.length > 0 ? (
             <>
-              <div style={{ display: 'grid', gridTemplateColumns: '110px repeat(3, 1fr) 70px 1fr 36px', padding: '0 0 8px', borderBottom: '1px solid var(--border)' }}>
+              <div className="attempt-history-grid attempt-history-head">
                 {['DATE', 'PUSH-UPS', 'SIT-UPS', '2.4KM', 'PTS', 'AWARD', ''].map((h) => (
                   <span key={h} className="label" style={{ fontSize: 10 }}>{h}</span>
                 ))}
@@ -1340,15 +1346,7 @@ function TrainScreen({ state, updateState }) {
                 const originalIdx = attempts.length - 1 - reversedI;
                 const isHighlighted = highlightedAttempt === originalIdx;
                 return (
-                  <div key={reversedI} className={isHighlighted ? 'attempt-glow' : ''} style={{
-                    display: 'grid',
-                    gridTemplateColumns: '110px repeat(3, 1fr) 70px 1fr 36px',
-                    padding: '11px 0',
-                    borderBottom: '1px solid var(--border)',
-                    alignItems: 'center',
-                    borderRadius: 4,
-                    transition: 'background 0.3s',
-                  }}>
+                  <div key={reversedI} className={`attempt-history-grid${isHighlighted ? ' attempt-glow' : ''}`}>
                     <span className="mono-dim">{shortDate(attempt.date)}</span>
                     <span className="mono">{attempt.pushups}</span>
                     <span className="mono">{attempt.situps}</span>
@@ -2054,25 +2052,29 @@ function JournalScreen({ state, updateState }) {
 
   const scoreSeries = entries.map((item) => Math.round(entryScore(item) * 100));
   const latestScore = scoreSeries.length ? scoreSeries[scoreSeries.length - 1] : null;
-  const chartData = {
-    labels: entries.map((item) => shortDate(entryDay(item))),
-    datasets: [
-      {
-        data: scoreSeries,
-        borderColor: '#4A7C59',
-        backgroundColor: 'rgba(74, 124, 89, 0.12)',
-        tension: 0.35,
-        fill: true,
-        pointRadius: 3,
-        pointBackgroundColor: '#4A7C59',
-        pointBorderColor: '#fffdf8',
-        pointBorderWidth: 1.5,
-      },
-    ],
-  };
-
   const svgScores = entries.map((item) => ({ v: entryScore(item) }));
   const declining = dipState;
+  const sentinelEnabled = state.settings?.sentinelEnabled ?? state.onboarding.journalOptIn ?? true;
+
+  if (!sentinelEnabled) {
+    return (
+      <section>
+        <ScreenHeader
+          title="Sentinel"
+          subtitle="Private reflection with NLP used only to estimate your own emotional trend."
+        />
+        <div className="alert-card">
+          <h2>Sentinel is off</h2>
+          <p>
+            Your private journal and trend graph are disabled. You can turn Sentinel back on from your service record without restarting onboarding.
+          </p>
+          <button className="primary-button" onClick={() => navigate('/profile')}>
+            Open service record
+          </button>
+        </div>
+      </section>
+    );
+  }
 
   return (
     <div style={{ height: '100%', overflow: 'auto', padding: '28px 36px' }}>
@@ -2401,14 +2403,14 @@ function EscalationScreen({ state }) {
   );
 }
 
-function ProfileScreen({ state, updateState }) {
+function ProfileScreen({ state, updateState, activeModule }) {
   const profile = state.auth.profile;
   const navigate = useNavigate();
   const ordDate = addYears(profile.enlistmentDate, 2);
   const ordDays = daysBetween(getToday(), ordDate);
 
   const [platoonFeed, setPlatoonFeed] = useState(true);
-  const [eveningReminder, setEveningReminder] = useState(true);
+  const [eveningReminder, setEveningReminder] = useState(state.settings?.eveningReminder ?? true);
 
   const branch = state.ui?.branch || 'army';
   const goalName = state.onboarding.ipptGoal || 'Pass';
@@ -2450,22 +2452,22 @@ function ProfileScreen({ state, updateState }) {
 
   const setGoal = (key) =>
     updateState((c) => ({ ...c, onboarding: { ...c.onboarding, ipptGoal: key } }));
-  const setBranch = (b) =>
-    updateState((c) => ({ ...c, ui: { ...c.ui, branch: b } }));
-  const toggleConsent = () =>
-    updateState((c) => ({ ...c, onboarding: { ...c.onboarding, consented: !c.onboarding.consented } }));
+  const setModule = (module) => {
+    updateState((c) => ({ ...c, ui: { ...c.ui, activeModule: module } }));
+    navigate(`/${module}`);
+  };
+  const toggleSentinel = () =>
+    updateState((c) => ({ ...c, settings: { ...c.settings, sentinelEnabled: !(c.settings?.sentinelEnabled ?? true) } }));
+  const toggleEveningReminder = () => {
+    setEveningReminder((v) => !v);
+    updateState((c) => ({ ...c, settings: { ...c.settings, eveningReminder: !(c.settings?.eveningReminder ?? eveningReminder) } }));
+  };
 
   const GOAL_TIERS = [
-    { key: 'Pass',   label: 'PASS',   min: 61 },
-    { key: 'Silver', label: 'SILVER', min: 75 },
-    { key: 'Gold',   label: 'GOLD',   min: 85 },
-  ];
-
-  const BRANCH_LIST = [
-    { key: 'army', label: 'LAND' },
-    { key: 'navy', label: 'SEA' },
-    { key: 'air',  label: 'AIR' },
-    { key: 'dis',  label: 'DIGITAL' },
+    { key: 'Pass', label: 'PASS', range: '51 - 60', award: '$0' },
+    { key: 'Pass with Incentive', label: 'PASS + INCENTIVE', range: '61 - 74', award: '$200' },
+    { key: 'Silver', label: 'SILVER', range: '75 - 84', award: '$300' },
+    { key: 'Gold', label: 'GOLD', range: '≥ 85', award: '$500' },
   ];
 
   const BRANCH_FORCE_LABEL = { army: 'LAND FORCE', navy: 'SEA FORCE', air: 'AIR FORCE', dis: 'DIGITAL FORCE' };
@@ -2510,7 +2512,7 @@ function ProfileScreen({ state, updateState }) {
           {/* Preferences panel */}
           <Panel style={{ padding: 28 }}>
             <span className="label" style={{ marginBottom: 18, display: 'block' }}>▲ IPPT OBJECTIVE</span>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(124px,1fr))', gap: 8 }}>
               {GOAL_TIERS.map((t) => {
                 const active = goalName === t.key;
                 return (
@@ -2521,8 +2523,8 @@ function ProfileScreen({ state, updateState }) {
                       background: active ? 'var(--accent-soft)' : 'var(--bg)' }}>
                     <span style={{ fontFamily: 'var(--font-head)', fontWeight: 700, fontSize: 15,
                       color: active ? 'var(--text)' : 'var(--text-dim)' }}>{t.label}</span>
-                    <span className="mono" style={{ fontSize: 13, color: active ? 'var(--amber)' : 'var(--text-faint)' }}>
-                      {t.min} PTS
+                    <span className="mono" style={{ fontSize: 12, color: active ? 'var(--amber)' : 'var(--text-faint)', textAlign: 'center' }}>
+                      {t.range} PTS · {t.award}
                     </span>
                   </button>
                 );
@@ -2531,21 +2533,17 @@ function ProfileScreen({ state, updateState }) {
 
             <div style={{ height: 1, background: 'var(--border)', margin: '24px 0' }} />
 
-            <span className="label" style={{ marginBottom: 18, display: 'block' }}>▲ SERVICE BRANCH · TERMINAL THEME</span>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 8 }}>
-              {BRANCH_LIST.map(({ key: k, label }) => {
-                const active = branch === k;
+            <span className="label" style={{ marginBottom: 12, display: 'block' }}>▲ JOURNEY MODE</span>
+            <div className="module-mode-slider" role="tablist" aria-label="Journey mode">
+              {[
+                { key: 'enlist', label: 'ENLIST', desc: 'Before BMT' },
+                { key: 'serve', label: 'SERVE', desc: 'Active service' },
+              ].map((item) => {
+                const active = activeModule === item.key;
                 return (
-                  <button key={k} onClick={() => setBranch(k)} data-branch={k}
-                    style={{ all: 'unset', cursor: 'pointer', display: 'flex', flexDirection: 'column',
-                      alignItems: 'center', gap: 8, padding: '16px 6px', borderRadius: 8,
-                      border: `1px solid ${active ? 'var(--accent-line)' : 'var(--border-strong)'}`,
-                      background: active ? 'var(--accent-soft)' : 'var(--bg)' }}>
-                    <span style={{ color: active ? 'var(--accent-text)' : 'var(--text-dim)' }}>
-                      <Insignia branch={k} size={24} />
-                    </span>
-                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, whiteSpace: 'nowrap',
-                      color: active ? 'var(--text)' : 'var(--text-dim)' }}>{label}</span>
+                  <button key={item.key} className={active ? 'active' : ''} onClick={() => setModule(item.key)} type="button">
+                    <span>{item.label}</span>
+                    <small>{item.desc}</small>
                   </button>
                 );
               })}
@@ -2558,8 +2556,8 @@ function ProfileScreen({ state, updateState }) {
               <SettingRow
                 title="Sentinel journal"
                 desc="Nightly wellness tracking, visible only to you"
-                on={state.onboarding.consented}
-                onToggle={toggleConsent}
+                on={state.settings?.sentinelEnabled ?? true}
+                onToggle={toggleSentinel}
               />
               <SettingRow
                 title="Platoon feed visibility"
@@ -2571,7 +2569,7 @@ function ProfileScreen({ state, updateState }) {
                 title="Evening reminder"
                 desc="Quiet 2100h nudge to journal"
                 on={eveningReminder}
-                onToggle={() => setEveningReminder((v) => !v)}
+                onToggle={toggleEveningReminder}
               />
             </div>
           </Panel>
@@ -2581,7 +2579,7 @@ function ProfileScreen({ state, updateState }) {
             <Panel style={{ padding: 28 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
                 <span className="label">▲ RECENT AWARDS</span>
-                <span className="mono-dim" style={{ fontSize: 11 }}>VIEW ALL →</span>
+                {achievements.length > 3 && <span className="mono-dim" style={{ fontSize: 11 }}>LATEST 3</span>}
               </div>
               {achievements.length > 0 ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -2603,7 +2601,7 @@ function ProfileScreen({ state, updateState }) {
             <Panel style={{ padding: 28 }}>
               <span className="label" style={{ marginBottom: 6, display: 'block' }}>▲ ACCOUNT</span>
               <div className="mono-dim" style={{ marginBottom: 18, fontSize: 11 }}>
-                SIGNED IN VIA SINGPASS · BUILD 2.4.0
+                SIGNED IN VIA SINGPASS
               </div>
               <button className="btn danger full" onClick={signOut}>SIGN OUT</button>
             </Panel>
