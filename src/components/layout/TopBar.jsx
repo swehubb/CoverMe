@@ -12,6 +12,7 @@ const ROUTE_TITLES = {
   '/journal':        'SERVE / SENTINEL',
   '/buddy-tap':      'SERVE / SQUAD SUPPORT',
   '/peer-support':   'SERVE / PEER WALL',
+  '/support-console':'SERVE / SUPPORT CONSOLE',
   '/escalation':     'SERVE / ESCALATION',
   '/profile':        'SERVE / SERVICE RECORD',
   '/what-to-expect': 'ENLIST / BRIEF',
@@ -47,9 +48,9 @@ export default function TopBar({ branch, activeModule, onModuleChange, profile }
         <span className="top-bar-bullet">▲</span>
         <span className="top-bar-title">{title}</span>
         <span className="badge verified" style={{ fontSize: 10 }}>
-          {branch === 'army' ? 'LAND FORCE' :
-           branch === 'navy' ? 'SEA FORCE'  :
-           branch === 'air'  ? 'AIR FORCE'  : 'DIGITAL FORCE'}
+          {branch === 'army' ? 'LAND' :
+           branch === 'navy' ? 'NAVY' :
+           branch === 'air'  ? 'AIR FORCE' : 'DIGITAL'}
         </span>
       </div>
       <div className="top-bar-right">

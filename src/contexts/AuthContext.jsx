@@ -9,9 +9,9 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(false);
   const isAuthenticated = Boolean(user);
 
-  const login = async () => {
+  const login = async (accountId) => {
     setLoading(true);
-    const result = await mockAuth.login();
+    const result = await mockAuth.login(accountId);
     setUser(result.user);
     setCurrentModule(result.user.currentModule || 'enlist');
     setLoading(false);

@@ -28,7 +28,8 @@ import SvgLineChart from './components/ui/SvgLineChart';
 import Insignia from './components/shared/Insignia';
 import { peerIntelPosts } from './data/mockPeerIntel';
 import { peerWallPosts, wallPhases } from './data/mockPeerWall';
-import { buddyTapSelectableMembers } from './data/mockPlatoon';
+import { platoonMembers, peerSupportLead } from './data/mockPlatoon';
+import { demoIpptAttemptsByAccount } from './data/mockAccounts';
 import nlpService from './services/nlpService';
 import { notify, crisisResources } from './services/mockNotification';
 import {
@@ -52,7 +53,7 @@ const STORAGE_KEY = 'cover-me-state';
 // Bump this whenever the seeded mock data below (journal, intel/wall posts, IPPT,
 // training feed, etc.) changes. On load, a saved copy with an older version is
 // dropped so the new seeds appear instead of being overridden by the stale cache.
-const SEED_VERSION = 4;
+const SEED_VERSION = 6;
 
 const defaultState = {
   __seedVersion: SEED_VERSION,
@@ -69,11 +70,8 @@ const defaultState = {
     eveningReminder: true,
   },
   ippt: {
-    attempts: [
-      { date: '2026-01-12', pushups: 28, situps: 30, runSeconds: 840 },
-      { date: '2026-03-18', pushups: 34, situps: 36, runSeconds: 790 },
-      { date: '2026-05-02', pushups: 38, situps: 41, runSeconds: 760 },
-    ],
+    attempts: demoIpptAttemptsByAccount['recruit-tan'],
+    attemptsByAccount: demoIpptAttemptsByAccount,
   },
   journal: {
     entries: [
@@ -98,6 +96,32 @@ const defaultState = {
     concerns: [],
     buddyTaps: [],
   },
+  support: {
+    pslThreads: [
+      {
+        id: 'psl-001',
+        alias: 'Anonymous Recruit 04',
+        subject: 'Adjusting to section tempo',
+        status: 'open',
+        createdAt: '2026-05-18T21:14:00.000Z',
+        assignedTo: 'Amirul Hassan',
+        requesterId: 'platoon-02',
+        messages: [
+          { from: 'anonymous', text: 'I have not been coping well lately. I want to talk, but I do not want my name attached to this.', timestamp: '2026-05-18T21:14:00.000Z' },
+          { from: 'psl', text: 'Thanks for reaching out. We can keep this anonymous and take it one step at a time. What has been weighing on you the most?', timestamp: '2026-05-18T21:22:00.000Z' },
+        ],
+      },
+    ],
+    outreachPrompts: [
+      {
+        id: 'outreach-marcus-seed',
+        userId: 'platoon-02',
+        status: 'pending',
+        createdAt: '2026-05-18T20:40:00.000Z',
+        reason: 'A few people in your unit noticed you may be having a rough week.',
+      },
+    ],
+  },
   social: {
     trainingFeed: trainingActivity,
     trainingFeedPosts: trainingActivity,
@@ -112,7 +136,7 @@ function normalizeProfile(profile) {
   if (!profile) return null;
 
   const rawName = profile.fullName || profile.name;
-  const fullName = !rawName || rawName.toUpperCase() === 'WEI' ? 'Tan An Wei' : rawName;
+  const fullName = !rawName || ['WEI', 'TAN AN WEI'].includes(rawName.toUpperCase()) ? 'Zach Poh' : rawName;
   const pesStatus = profile.pesStatus || profile.pes || 'B1';
 
   return {
@@ -134,6 +158,49 @@ function loadState() {
     const parsed = JSON.parse(saved);
     if (parsed?.auth?.profile) {
       parsed.auth.profile = normalizeProfile(parsed.auth.profile);
+      if (parsed.auth.profile.id === 'commander-marcus') {
+        parsed.auth.profile = normalizeProfile({
+          ...parsed.auth.profile,
+          id: 'nsf-marcus',
+          memberId: 'platoon-02',
+          role: 'nsf',
+          rank: 'REC',
+          pes: 'B1',
+          pesStatus: 'B1',
+          enlistmentDate: '2026-05-01',
+          ordDate: '2028-03-01',
+          ipptGoal: 'Pass',
+          consented: true,
+          currentModule: 'serve',
+        });
+      }
+      if (parsed.auth.profile.id === 'psl-jonathan') {
+        parsed.auth.profile = normalizeProfile({
+          ...parsed.auth.profile,
+          id: 'psl-amirul',
+          memberId: 'platoon-03',
+          name: 'Amirul Hassan',
+          fullName: 'Amirul Hassan',
+          role: 'peer-support',
+          rank: '3SG',
+        });
+      }
+    }
+    if (parsed?.support?.pslThreads) {
+      parsed.support.pslThreads = parsed.support.pslThreads.map((thread) => ({
+        ...thread,
+        assignedTo: thread.assignedTo === 'Jonathan Tay' ? 'Amirul Hassan' : thread.assignedTo,
+        requesterId: thread.requesterId || (thread.alias?.includes('Recruit') ? 'platoon-02' : undefined),
+        messages: thread.id === 'psl-001'
+          ? [
+              { from: 'anonymous', text: 'I have not been coping well lately. I want to talk, but I do not want my name attached to this.', timestamp: '2026-05-18T21:14:00.000Z' },
+              { from: 'psl', text: 'Thanks for reaching out. We can keep this anonymous and take it one step at a time. What has been weighing on you the most?', timestamp: '2026-05-18T21:22:00.000Z' },
+            ]
+          : thread.messages,
+      }));
+    }
+    if (parsed?.support && !parsed.support.outreachPrompts) {
+      parsed.support.outreachPrompts = defaultState.support.outreachPrompts;
     }
     if (
       parsed?.auth?.profile?.enlistmentDate === '2026-09-14' ||
@@ -154,6 +221,12 @@ function loadState() {
         auth: { ...defaultState.auth, ...parsed.auth },
         onboarding: { ...defaultState.onboarding, ...parsed.onboarding },
         settings: { ...defaultState.settings, ...parsed.settings },
+        ippt: {
+          ...defaultState.ippt,
+          ...parsed.ippt,
+          attemptsByAccount: { ...defaultState.ippt.attemptsByAccount, ...parsed.ippt?.attemptsByAccount },
+        },
+        support: { ...defaultState.support, ...parsed.support },
       };
     }
     return {
@@ -162,9 +235,14 @@ function loadState() {
       auth: { ...defaultState.auth, ...parsed.auth },
       onboarding: { ...defaultState.onboarding, ...parsed.onboarding },
       settings: { ...defaultState.settings, ...parsed.settings },
-      ippt: { ...defaultState.ippt, ...parsed.ippt },
+      ippt: {
+        ...defaultState.ippt,
+        ...parsed.ippt,
+        attemptsByAccount: { ...defaultState.ippt.attemptsByAccount, ...parsed.ippt?.attemptsByAccount },
+      },
       journal: { ...defaultState.journal, ...parsed.journal },
       community: { ...defaultState.community, ...parsed.community },
+      support: { ...defaultState.support, ...parsed.support },
       social: { ...defaultState.social, ...parsed.social },
       ui: { ...defaultState.ui, ...parsed.ui },
     };
@@ -261,8 +339,10 @@ function AppShell({ state, updateState }) {
   };
 
   const signOut = () => {
-    localStorage.removeItem(STORAGE_KEY);
-    updateState(() => defaultState);
+    updateState((current) => ({
+      ...current,
+      auth: { isAuthenticated: false, profile: null },
+    }));
     navigate('/login');
   };
 
@@ -271,6 +351,7 @@ function AppShell({ state, updateState }) {
       <CommandRail
         branch={branch}
         activeModule={activeModule}
+        profile={profile}
         onSignOut={signOut}
         onModuleChange={setActiveModule}
       />
@@ -291,8 +372,9 @@ function AppShell({ state, updateState }) {
             <Route path="/ai-chat" element={<AiChatPage />} />
             <Route path="/peer-intel" element={<PeerIntelPage state={state} />} />
             <Route path="/peer-support" element={<PeerSupportWallScreen state={state} updateState={updateState} />} />
+            <Route path="/support-console" element={<SupportConsoleScreen state={state} updateState={updateState} />} />
             <Route path="/buddy-tap" element={<BuddyTapScreen state={state} updateState={updateState} />} />
-            <Route path="/escalation" element={<EscalationScreen state={state} />} />
+            <Route path="/escalation" element={<EscalationScreen state={state} updateState={updateState} />} />
             <Route
               path="/community"
               element={<CommunityScreen state={state} updateState={updateState} activeModule={activeModule} />}
@@ -412,6 +494,12 @@ function HomeDashboard({ state, phase, activeModule }) {
     ? calculateIpptScore(latestIppt.pushups, latestIppt.situps, latestIppt.runSeconds)
     : null;
   const streakDays = getJournalStreak(state.journal.entries);
+  const outreachPrompt = (state.support?.outreachPrompts || []).find(
+    (prompt) => prompt.status !== 'dismissed' && (
+      prompt.userId === profile.memberId ||
+      (profile.fullName === 'Marcus Ng' && prompt.userId === 'platoon-02')
+    ),
+  );
 
   return (
     <div className="dash-page">
@@ -455,6 +543,19 @@ function HomeDashboard({ state, phase, activeModule }) {
           <Stat label="JOURNAL STREAK" value={streakDays} unit="D" size={34} />
         </div>
       </Panel>
+
+      {outreachPrompt && (
+        <Panel ticks className="support-outreach-panel" style={{ marginBottom: 16, padding: 22 }}>
+          <div>
+            <span className="label" style={{ color: 'var(--accent-text)', marginBottom: 6 }}>▲ PRIVATE SUPPORT CHECK-IN</span>
+            <h3>Some mates are looking out for you.</h3>
+            <p>{outreachPrompt.reason} You can talk to the peer support leader anonymously; they will not see your name.</p>
+          </div>
+          <button className="primary-button small" onClick={() => navigate('/escalation')}>
+            View support options
+          </button>
+        </Panel>
+      )}
 
       <div className="dash-features-grid">
         {moduleContent.detailBlocks.map((block) => (
@@ -883,7 +984,11 @@ function FeedScreenContent({
 }
 
 function BuddyTapScreen({ state, updateState }) {
-  const [buddyId, setBuddyId] = useState(buddyTapSelectableMembers[0].id);
+  const selectableBuddies = useMemo(
+    () => platoonMembers.filter((member) => member.id !== state.auth.profile?.memberId),
+    [state.auth.profile?.memberId],
+  );
+  const [buddyId, setBuddyId] = useState(selectableBuddies[0]?.id || '');
   const [buddyComment, setBuddyComment] = useState('');
   const [submittedConcern, setSubmittedConcern] = useState(false);
   const [checking, setChecking] = useState(false);
@@ -894,7 +999,14 @@ function BuddyTapScreen({ state, updateState }) {
   const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
   const weeklyCount = taps.filter((tap) => new Date(tap.timestamp).getTime() >= weekAgo).length;
 
+  useEffect(() => {
+    if (!selectableBuddies.some((member) => member.id === buddyId)) {
+      setBuddyId(selectableBuddies[0]?.id || '');
+    }
+  }, [buddyId, selectableBuddies]);
+
   const submitConcern = async () => {
+    if (!buddyId) return;
     if (!buddyComment.trim()) {
       setBlockReason('Add a short note on what you noticed so the support message feels grounded.');
       return;
@@ -910,7 +1022,7 @@ function BuddyTapScreen({ state, updateState }) {
       return;
     }
 
-    const member = buddyTapSelectableMembers.find((m) => m.id === buddyId);
+    const member = selectableBuddies.find((m) => m.id === buddyId);
     const priorCount = taps.filter((tap) => tap.toUserId === buddyId).length;
     const newCount = priorCount + 1;
 
@@ -928,6 +1040,28 @@ function BuddyTapScreen({ state, updateState }) {
     setSubmittedConcern(true);
 
     if (newCount >= 3) {
+      updateState((current) => {
+        const prompts = current.support?.outreachPrompts || [];
+        const hasOpenPrompt = prompts.some((prompt) => prompt.userId === buddyId && prompt.status !== 'dismissed');
+        return {
+          ...current,
+          support: {
+            ...current.support,
+            outreachPrompts: hasOpenPrompt
+              ? prompts
+              : [
+                  ...prompts,
+                  {
+                    id: `outreach-${buddyId}-${Date.now()}`,
+                    userId: buddyId,
+                    status: 'pending',
+                    createdAt: new Date().toISOString(),
+                    reason: 'A few people in your unit noticed you may be having a rough week.',
+                  },
+                ],
+          },
+        };
+      });
       setThresholdNotice(notify('buddy_threshold', { recipientName: member?.name }));
     }
   };
@@ -953,7 +1087,7 @@ function BuddyTapScreen({ state, updateState }) {
         {!submittedConcern ? (
           <>
             <select value={buddyId} onChange={(event) => setBuddyId(event.target.value)}>
-              {buddyTapSelectableMembers.map((member) => (
+              {selectableBuddies.map((member) => (
                 <option key={member.id} value={member.id}>
                   {member.rank} {member.name}
                 </option>
@@ -1116,6 +1250,7 @@ function TrainScreen({ state, updateState }) {
 
   const pbs     = attempts.length ? getPbs(attempts) : null;
   const profile = state.auth.profile;
+  const accountId = profile?.id || 'recruit-tan';
 
   const feed = state.social?.trainingFeed ?? trainingActivity ?? [];
 
@@ -1150,7 +1285,14 @@ function TrainScreen({ state, updateState }) {
 
     updateState((c) => ({
       ...c,
-      ippt: { ...c.ippt, attempts: [...c.ippt.attempts, newAttempt] },
+      ippt: {
+        ...c.ippt,
+        attempts: [...c.ippt.attempts, newAttempt],
+        attemptsByAccount: {
+          ...(c.ippt.attemptsByAccount || {}),
+          [accountId]: [...c.ippt.attempts, newAttempt],
+        },
+      },
     }));
     setShowModal(false);
     setForm(BLANK_FORM());
@@ -1179,7 +1321,14 @@ function TrainScreen({ state, updateState }) {
     updateState((c) => {
       const updated = [...c.ippt.attempts];
       updated[editIdx] = { date: editForm.date, pushups: Number(editForm.pushups), situps: Number(editForm.situps), runSeconds };
-      return { ...c, ippt: { ...c.ippt, attempts: updated } };
+      return {
+        ...c,
+        ippt: {
+          ...c.ippt,
+          attempts: updated,
+          attemptsByAccount: { ...(c.ippt.attemptsByAccount || {}), [accountId]: updated },
+        },
+      };
     });
     setEditIdx(null);
     setEditForm(null);
@@ -1188,7 +1337,14 @@ function TrainScreen({ state, updateState }) {
   const deleteAttempt = (originalIdx) => {
     updateState((c) => {
       const updated = c.ippt.attempts.filter((_, i) => i !== originalIdx);
-      return { ...c, ippt: { ...c.ippt, attempts: updated } };
+      return {
+        ...c,
+        ippt: {
+          ...c.ippt,
+          attempts: updated,
+          attemptsByAccount: { ...(c.ippt.attemptsByAccount || {}), [accountId]: updated },
+        },
+      };
     });
     setEditIdx(null);
     setEditForm(null);
@@ -2237,13 +2393,16 @@ function JournalScreen({ state, updateState }) {
 }
 
 
-function EscalationScreen({ state }) {
+function EscalationScreen({ state, updateState }) {
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const isCrisis = params.get('crisis') === 'true';
   const [acknowledged, setAcknowledged] = useState(false);
   const [activePanel, setActivePanel] = useState(null);
   const [peerSent, setPeerSent] = useState(false);
+  const [pslDraft, setPslDraft] = useState('');
+  const [pslError, setPslError] = useState('');
+  const [pslSending, setPslSending] = useState(false);
 
   // AI companion chat (multi-turn within the session).
   const [history, setHistory] = useState([]);
@@ -2251,6 +2410,9 @@ function EscalationScreen({ state }) {
   const [thinking, setThinking] = useState(false);
 
   const entries = state.journal.entries.slice(-7);
+  const latestThread = [...(state.support?.pslThreads || [])].reverse().find((thread) =>
+    thread.status !== 'closed' && thread.requesterId === state.auth.profile?.memberId
+  );
   const chartData = {
     labels: entries.map((item) => shortDate(entryDay(item))),
     datasets: [
@@ -2278,6 +2440,68 @@ function EscalationScreen({ state }) {
     const { reply } = await nlpService.companion(userText, history);
     setThinking(false);
     setHistory([...nextHistory, { role: 'assistant', content: reply }]);
+  };
+
+  const openPslThread = () => {
+    const profile = state.auth.profile;
+    const createdAt = new Date().toISOString();
+    updateState((current) => ({
+      ...current,
+      support: {
+        ...current.support,
+        pslThreads: [
+          ...(current.support?.pslThreads || []),
+          {
+            id: `psl-${Date.now()}`,
+            alias: 'Anonymous NSF',
+            subject: 'Peer support request',
+            status: 'open',
+            createdAt,
+            assignedTo: peerSupportLead?.name || 'Amirul Hassan',
+            requesterId: profile?.memberId,
+            messages: [
+              {
+                from: 'anonymous',
+                text: 'I would like to speak to a peer support leader anonymously.',
+                timestamp: createdAt,
+              },
+            ],
+          },
+        ],
+      },
+    }));
+    setPeerSent(true);
+  };
+
+  const sendPslMessage = async () => {
+    if (!pslDraft.trim() || !latestThread) return;
+    const text = pslDraft.trim();
+    setPslSending(true);
+    setPslError('');
+    const verdict = await moderateSupportMessage(text);
+    setPslSending(false);
+    if (!verdict.approved) {
+      setPslError(verdict.reason || 'This anonymous chat is for support. Rephrase it with care before sending.');
+      return;
+    }
+    setPslDraft('');
+    updateState((current) => ({
+      ...current,
+      support: {
+        ...current.support,
+        pslThreads: (current.support?.pslThreads || []).map((thread) =>
+          thread.id === latestThread.id
+            ? {
+                ...thread,
+                messages: [
+                  ...thread.messages,
+                  { from: 'anonymous', text, timestamp: new Date().toISOString() },
+                ],
+              }
+            : thread,
+        ),
+      },
+    }));
   };
 
   return (
@@ -2343,10 +2567,35 @@ function EscalationScreen({ state }) {
 
         <article className="escalation-option">
           <h3>Peer support leader</h3>
-          <p>Send an anonymous request to a trained peer supporter in your unit. No names shared.</p>
-          <button className="soft-button" onClick={() => setPeerSent(true)}>
-            Request anonymously
+          <p>Open an anonymous chat with your unit's trained peer supporter. No names shared.</p>
+          <button className="soft-button" onClick={openPslThread} disabled={!!latestThread}>
+            {latestThread ? 'Thread open' : 'Request anonymously'}
           </button>
+          {latestThread && (
+            <div className="psl-chat-card user-view">
+              <div className="label" style={{ marginBottom: 8 }}>ANONYMOUS PSL THREAD</div>
+              <div className="psl-chat-log">
+                {latestThread.messages.map((message, index) => (
+                  <div key={`${message.timestamp}-${index}`} className={`psl-chat-message ${message.from}`}>
+                    <div className={`psl-chat-bubble ${message.from}`}>
+                      {message.text}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="psl-chat-compose">
+                <input
+                  value={pslDraft}
+                  onChange={(event) => setPslDraft(event.target.value)}
+                  placeholder="Add an anonymous message"
+                />
+                <button className="primary-button small" onClick={sendPslMessage} disabled={!pslDraft.trim() || pslSending}>
+                  {pslSending ? 'Checking…' : 'Send'}
+                </button>
+              </div>
+              {pslError && <p className="inline-warning">{pslError}</p>}
+            </div>
+          )}
         </article>
 
         <article className="escalation-option">
@@ -2370,8 +2619,7 @@ function EscalationScreen({ state }) {
       {peerSent && (
         <Modal title="Request sent" onClose={() => setPeerSent(false)}>
           <p>
-            An anonymous request has been sent to your unit's peer support leader. Your identity is not attached —
-            they'll simply know someone reached out and is open to a chat.
+            An anonymous chat thread has been opened for your unit's peer support leader. Your identity is not attached.
           </p>
           <button className="primary-button" onClick={() => setPeerSent(false)}>
             Close
@@ -2399,6 +2647,172 @@ function EscalationScreen({ state }) {
           </div>
         </div>
       )}
+    </section>
+  );
+}
+
+function SupportConsoleScreen({ state, updateState }) {
+  const profile = state.auth.profile;
+  const [replyDrafts, setReplyDrafts] = useState({});
+  const [replyErrors, setReplyErrors] = useState({});
+  const [replyChecking, setReplyChecking] = useState({});
+  const [selectedMessage, setSelectedMessage] = useState(null);
+  const threads = state.support?.pslThreads || [];
+  const isSupportUser = profile?.role === 'peer-support';
+
+  const sendReply = async (threadId) => {
+    const text = (replyDrafts[threadId] || '').trim();
+    if (!text) return;
+    setReplyChecking((current) => ({ ...current, [threadId]: true }));
+    setReplyErrors((current) => ({ ...current, [threadId]: '' }));
+    const verdict = await moderateSupportMessage(text);
+    setReplyChecking((current) => ({ ...current, [threadId]: false }));
+    if (!verdict.approved) {
+      setReplyErrors((current) => ({
+        ...current,
+        [threadId]: verdict.reason || 'PSL replies must stay kind, calm, and supportive. Rephrase before sending.',
+      }));
+      return;
+    }
+    updateState((current) => ({
+      ...current,
+      support: {
+        ...current.support,
+        pslThreads: (current.support?.pslThreads || []).map((thread) =>
+          thread.id === threadId
+            ? {
+                ...thread,
+                messages: [
+                  ...thread.messages,
+                  { from: 'psl', text, timestamp: new Date().toISOString() },
+                ],
+              }
+            : thread,
+        ),
+      },
+    }));
+    setReplyDrafts((current) => ({ ...current, [threadId]: '' }));
+  };
+
+  const unsendMessage = (threadId, messageIndex) => {
+    updateState((current) => ({
+      ...current,
+      support: {
+        ...current.support,
+        pslThreads: (current.support?.pslThreads || []).map((thread) =>
+          thread.id === threadId
+            ? {
+                ...thread,
+                messages: thread.messages.filter((_, index) => index !== messageIndex),
+              }
+            : thread,
+        ),
+      },
+    }));
+    setSelectedMessage(null);
+  };
+
+  const setThreadStatus = (threadId, status) => {
+    updateState((current) => ({
+      ...current,
+      support: {
+        ...current.support,
+        pslThreads: (current.support?.pslThreads || []).map((thread) =>
+          thread.id === threadId ? { ...thread, status } : thread,
+        ),
+      },
+    }));
+  };
+
+  if (!isSupportUser) {
+    return (
+      <section>
+        <ScreenHeader title="Support Console" subtitle="Peer support leader access only." />
+        <div className="empty-state">This console is available from the peer support leader account.</div>
+      </section>
+    );
+  }
+
+  return (
+    <section>
+      <ScreenHeader
+        title="PSL Console"
+        subtitle="Anonymous support threads only. Identities and personal training records stay hidden."
+      />
+
+      <div className="support-console-grid support-console-single">
+        <Panel ticks style={{ padding: 22 }}>
+          <span className="label" style={{ marginBottom: 14 }}>▲ ANONYMOUS PSL INBOX</span>
+          <div className="support-thread-list">
+            {threads.length === 0 ? (
+              <div className="empty-state">No anonymous support threads yet.</div>
+            ) : (
+              [...threads].reverse().map((thread) => (
+                <article key={thread.id} className="support-thread-card">
+                  <div className="support-thread-top">
+                    <div>
+                      <div className="h-title" style={{ fontSize: 17 }}>{thread.alias}</div>
+                      <div className="mono-dim">{thread.subject} · {shortDate(thread.createdAt)}</div>
+                    </div>
+                    <span className={`info-badge ${thread.status === 'open' ? 'distress-badge' : ''}`}>
+                      {thread.status.toUpperCase()}
+                    </span>
+                  </div>
+                  <div className="psl-chat-log">
+                    {thread.messages.map((message, index) => (
+                      <div
+                        key={`${thread.id}-${index}`}
+                        className={`psl-chat-message ${message.from} ${selectedMessage?.threadId === thread.id && selectedMessage?.index === index ? 'selected' : ''}`}
+                      >
+                        <button
+                          type="button"
+                          className={`psl-chat-bubble ${message.from}`}
+                          onClick={() => {
+                            if (message.from !== 'psl') return;
+                            setSelectedMessage((current) =>
+                              current?.threadId === thread.id && current?.index === index
+                                ? null
+                                : { threadId: thread.id, index },
+                            );
+                          }}
+                        >
+                          {message.text}
+                        </button>
+                        {message.from === 'psl' && selectedMessage?.threadId === thread.id && selectedMessage?.index === index && (
+                          <button className="psl-unsend-btn" type="button" onClick={() => unsendMessage(thread.id, index)}>
+                            Unsend
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  <div className="psl-chat-compose">
+                    <input
+                      value={replyDrafts[thread.id] || ''}
+                      onChange={(event) => setReplyDrafts((current) => ({ ...current, [thread.id]: event.target.value }))}
+                      placeholder="Reply as peer support leader"
+                    />
+                    <button className="primary-button small" onClick={() => sendReply(thread.id)} disabled={!replyDrafts[thread.id]?.trim() || replyChecking[thread.id]}>
+                      {replyChecking[thread.id] ? 'Checking…' : 'Reply'}
+                    </button>
+                    <button className="soft-button" onClick={() => setThreadStatus(thread.id, thread.status === 'open' ? 'monitoring' : 'open')}>
+                      {thread.status === 'open' ? 'Mark monitoring' : 'Reopen'}
+                    </button>
+                  </div>
+                  {replyErrors[thread.id] && <p className="inline-warning">{replyErrors[thread.id]}</p>}
+                </article>
+              ))
+            )}
+          </div>
+        </Panel>
+
+        <Panel style={{ padding: 22 }}>
+          <span className="label" style={{ marginBottom: 8 }}>▲ ACCESS CONTEXT</span>
+          <p style={{ color: 'var(--text-dim)', fontSize: 13.5, lineHeight: 1.55 }}>
+            Signed in as {profile.rank} {profile.fullName}. Anonymous chats do not reveal who reached out.
+          </p>
+        </Panel>
+      </div>
     </section>
   );
 }
@@ -2445,8 +2859,10 @@ function ProfileScreen({ state, updateState, activeModule }) {
   }, [ipptAttempts, journalStreak, state.community?.buddyTaps]);
 
   const signOut = () => {
-    localStorage.removeItem(STORAGE_KEY);
-    updateState(() => defaultState);
+    updateState((current) => ({
+      ...current,
+      auth: { isAuthenticated: false, profile: null },
+    }));
     navigate('/login');
   };
 
@@ -2474,12 +2890,12 @@ function ProfileScreen({ state, updateState, activeModule }) {
 
   const BRANCH_LIST = [
     { key: 'army', label: 'LAND', desc: 'Army' },
-    { key: 'navy', label: 'SEA', desc: 'Navy' },
-    { key: 'air', label: 'AIR', desc: 'Air Force' },
+    { key: 'navy', label: 'NAVY', desc: 'Navy' },
+    { key: 'air', label: 'AIR FORCE', desc: 'Air Force' },
     { key: 'dis', label: 'DIGITAL', desc: 'Digital Service' },
   ];
 
-  const BRANCH_FORCE_LABEL = { army: 'LAND FORCE', navy: 'SEA FORCE', air: 'AIR FORCE', dis: 'DIGITAL FORCE' };
+  const BRANCH_FORCE_LABEL = { army: 'LAND', navy: 'NAVY', air: 'AIR FORCE', dis: 'DIGITAL' };
 
   return (
     <div style={{ height: '100%', overflow: 'auto', padding: '28px 36px' }}>
@@ -2812,6 +3228,21 @@ function calculateIpptScore(pushups, situps, runSeconds) {
     score >= 85 ? 'Gold' : score >= 75 ? 'Silver' : score >= 61 ? 'Pass with Incentive' : score >= 51 ? 'Pass' : 'Below Pass';
 
   return { score, award };
+}
+
+async function moderateSupportMessage(text) {
+  const verdict = await nlpService.moderate(text);
+  const lower = text.toLowerCase();
+  const hostileTerms = ['idiot', 'stupid', 'useless', 'pathetic', 'loser', 'shut up', 'dumb', 'weakling', 'hate you'];
+
+  if (hostileTerms.some((term) => lower.includes(term))) {
+    return {
+      approved: false,
+      reason: 'This chat is for peer support. Rephrase it with care before sending.',
+    };
+  }
+
+  return verdict;
 }
 
 function getPbs(attempts) {

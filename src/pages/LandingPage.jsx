@@ -3,11 +3,12 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import Insignia from '../components/shared/Insignia';
 import Panel from '../components/ui/Panel';
+import { getDemoAccountByUid } from '../data/mockAccounts';
 
 function normalizeProfile(profile) {
   if (!profile) return null;
   const rawName = profile.fullName || profile.name;
-  const fullName = !rawName || rawName.toUpperCase() === 'WEI' ? 'Tan An Wei' : rawName;
+  const fullName = !rawName || ['WEI', 'TAN AN WEI'].includes(rawName.toUpperCase()) ? 'Zach Poh' : rawName;
   const pesStatus = profile.pesStatus || profile.pes || 'B1';
   return {
     ...profile,
@@ -24,19 +25,48 @@ export default function LandingPage({ state, updateState }) {
   const navigate = useNavigate();
   const { login } = useAuth();
   const [loading, setLoading] = useState(false);
+  const [showPasscode, setShowPasscode] = useState(false);
+  const [uid, setUid] = useState('');
+  const [password, setPassword] = useState('');
+  const [loginError, setLoginError] = useState('');
 
   useEffect(() => {
     if (state.auth.isAuthenticated) navigate('/setup/goal', { replace: true });
   }, [navigate, state.auth.isAuthenticated]);
 
   const handleLogin = async () => {
+    if (!showPasscode) {
+      setShowPasscode(true);
+      return;
+    }
+    const account = getDemoAccountByUid(uid);
+    if (!account) {
+      setLoginError('Incorrect UID. Check the demo login ID and try again.');
+      return;
+    }
+    setLoginError('');
     setLoading(true);
-    const profile = normalizeProfile(await login());
+    const profile = normalizeProfile(await login(account.uid));
+    const isStaff = profile.role === 'peer-support';
     updateState((current) => ({
       ...current,
       auth: { isAuthenticated: true, profile },
+      ippt: {
+        ...current.ippt,
+        attempts: current.ippt?.attemptsByAccount?.[profile.id] || profile.ipptAttempts || current.ippt.attempts,
+        attemptsByAccount: {
+          ...(current.ippt?.attemptsByAccount || {}),
+          [profile.id]: current.ippt?.attemptsByAccount?.[profile.id] || profile.ipptAttempts || current.ippt.attempts,
+        },
+      },
+      onboarding: {
+        ...current.onboarding,
+        ipptGoal: profile.ipptGoal || current.onboarding.ipptGoal,
+        consented: isStaff ? true : current.onboarding.consented || profile.consented,
+      },
+      ui: { ...current.ui, activeModule: profile.currentModule || current.ui.activeModule },
     }));
-    navigate('/setup/goal');
+    navigate(isStaff ? '/support-console' : (profile.consented && profile.ipptGoal ? `/${profile.currentModule || 'serve'}` : '/setup/goal'));
     setLoading(false);
   };
 
@@ -45,7 +75,7 @@ export default function LandingPage({ state, updateState }) {
       <div className="auth-left">
         <div className="auth-brand-row">
           <Insignia branch="army" size={26} />
-          <span className="auth-brand-label">SAF · LAND FORCE · TERMINAL ACCESS</span>
+          <span className="auth-brand-label">SAF · LAND · TERMINAL ACCESS</span>
         </div>
         <div className="fade-up">
           <div className="label" style={{ color: 'var(--accent-text)', marginBottom: 14 }}>
@@ -71,8 +101,36 @@ export default function LandingPage({ state, updateState }) {
             Verify your identity with Singpass to access your service profile.
             All session data is encrypted end-to-end.
           </p>
+          {showPasscode && (
+            <div className="auth-passcode-form">
+              <label className="auth-passcode-label" htmlFor="demo-uid">UID</label>
+              <input
+                id="demo-uid"
+                className="auth-passcode-input auth-uid-input"
+                type="text"
+                value={uid}
+                onChange={(event) => setUid(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') handleLogin();
+                }}
+                autoFocus
+              />
+              <label className="auth-passcode-label" htmlFor="demo-password" style={{ marginTop: 12 }}>Password</label>
+              <input
+                id="demo-password"
+                className="auth-passcode-input"
+                type="password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') handleLogin();
+                }}
+              />
+              {loginError && <p className="inline-warning">{loginError}</p>}
+            </div>
+          )}
           <button className="singpass-btn" onClick={handleLogin} disabled={loading}>
-            {loading ? 'ESTABLISHING LINK…' : 'LOG IN WITH SINGPASS'}
+            {loading ? 'ESTABLISHING LINK…' : showPasscode ? 'ENTER TERMINAL' : 'LOG IN WITH SINGPASS'}
           </button>
           <div className="hr" style={{ margin: '26px 0 18px' }} />
           <div className="auth-trust-list">

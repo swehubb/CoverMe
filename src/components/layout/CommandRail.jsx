@@ -18,11 +18,14 @@ const ENLIST_NAV = [
   { id: 'profile', label: 'RECORD', glyph: '◮', path: '/profile' },
 ];
 
-export default function CommandRail({ branch = 'army', activeModule = 'serve', onSignOut, onModuleChange }) {
+export default function CommandRail({ branch = 'army', activeModule = 'serve', profile, onSignOut, onModuleChange }) {
   const navigate = useNavigate();
   const { pathname } = useLocation();
 
-  const nav = activeModule === 'enlist' ? ENLIST_NAV : SERVE_NAV;
+  const supportNav = profile?.role === 'peer-support'
+    ? [{ id: 'support-console', label: 'PSL', glyph: '▣', path: '/support-console' }]
+    : [];
+  const nav = activeModule === 'enlist' ? [...ENLIST_NAV, ...supportNav] : [...SERVE_NAV, ...supportNav];
 
   const isActive = (path) => {
     if (path === '/serve' || path === '/enlist') return pathname === path;
