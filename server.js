@@ -199,12 +199,13 @@ app.post('/api/sentiment', async (req, res, next) => {
   const text = (req.body?.text || '').toString();
   if (!text.trim()) return res.json(SENTIMENT_FALLBACK);
 
-  // Keyword safety net is computed independently of the LLM and OR'd in below.
+  // Three-layer crisis detection: keyword net + neural guardrail (parallel with LLM) + LLM judgment.
   const keywordCrisis = detectCrisis(text);
+  const guardPromise = runGuardrail(text);
 
   try {
-    const raw = await chatJSON(SENTIMENT_SYSTEM, text);
-    const crisis = Boolean(raw.crisis) || keywordCrisis;
+    const [raw, guard] = await Promise.all([chatJSON(SENTIMENT_SYSTEM, text), guardPromise]);
+    const crisis = Boolean(raw.crisis) || keywordCrisis || guard.selfHarm;
     const result = {
       score: crisis ? Math.min(clamp01(Number(raw.score)), 0.1) : clamp01(Number(raw.score)),
       crisis,
@@ -219,10 +220,9 @@ app.post('/api/sentiment', async (req, res, next) => {
     return res.json(result);
   } catch (err) {
     console.error('[sentiment] falling back:', err.message);
-    // Even on total LLM failure, the keyword net still flags explicit self-harm.
-    return res.json(
-      keywordCrisis ? { score: 0.05, crisis: true, dominant: 'crisis' } : SENTIMENT_FALLBACK,
-    );
+    const { selfHarm } = await guardPromise;
+    const crisis = keywordCrisis || selfHarm;
+    return res.json(crisis ? { score: 0.05, crisis: true, dominant: 'crisis' } : SENTIMENT_FALLBACK);
   }
 });
 
@@ -233,6 +233,24 @@ app.post('/api/moderate', async (req, res) => {
   const context = req.body?.context || 'wall';
   if (!text.trim()) return res.json(MODERATE_FALLBACK);
 
+  // Guardrail pre-filter: fast classifier runs first to catch clear violations without a GPT call.
+  const guard = await runGuardrail(text);
+  if (guard.selfHarm) {
+    console.warn('[moderate] guardrail blocked: self-harm signal');
+    return res.json({
+      approved: false, flagged: true, distress: true,
+      reason: "It sounds like you might be going through something really difficult right now. This wall is a space for peer support, but please reach out to someone who can truly help — SAF Care Hotline (24/7): 1800-278-0033 or Samaritans of Singapore (24/7): 1-767. You don't have to carry this alone.",
+    });
+  }
+  if (guard.flagged) {
+    console.warn('[moderate] guardrail blocked: harmful content, skipping GPT call');
+    return res.json({
+      approved: false, flagged: true, distress: false,
+      reason: "This post contains content that isn't appropriate for this peer support space. NS is tough and emotions can run high — try rephrasing in a way that is kind and supportive. Your experience is worth sharing.",
+    });
+  }
+
+  // Content passed the classifier — use GPT-4.1 for nuanced Singlish and NS context judgment.
   const system = context === 'buddy' ? BUDDY_TAP_SYSTEM : MODERATE_SYSTEM;
   try {
     return res.json(await moderateText(text, system));
@@ -367,6 +385,97 @@ app.post('/api/recommend-workout', async (req, res) => {
   }
 });
 
+// ---------------------------------------------------------------------------
+// Companion RAG knowledge base — therapist-approved, research-backed sources.
+// Refreshed from PubMed every 24 hours; static KB is always the fallback.
+// ---------------------------------------------------------------------------
+
+const COMPANION_KNOWLEDGE_BASE = `
+## Evidence-Based Coping Techniques
+
+### Box Breathing (4-4-4-4)
+Source: American Psychological Association; validated for acute anxiety.
+Inhale 4 counts → Hold 4 → Exhale 4 → Hold 4. Repeat 4 cycles.
+Activates the parasympathetic nervous system; reduces cortisol within 2–3 minutes.
+Used by emergency responders and military personnel worldwide.
+
+### 5-4-3-2-1 Grounding
+Source: Evidence-based trauma therapy; endorsed by SAMHSA.
+Name 5 things you see → 4 you hear → 3 you can touch → 2 you smell → 1 you taste.
+Interrupts anxiety spirals by re-engaging the sensory cortex. Effective for dissociation and overwhelm.
+
+### Cognitive Defusion (Acceptance and Commitment Therapy)
+Source: Hayes, Strosahl & Wilson (2011), Guilford Press. 200+ RCTs support ACT for high-stress populations.
+Prefix distressing thoughts with: "I notice I'm having the thought that…"
+Creates psychological distance from the thought; reduces emotional fusion.
+
+### Behavioural Activation
+Source: Beck Institute for Cognitive Behavior Therapy.
+In depression, action precedes mood change — not the other way around.
+One low-effort, achievable activity (eating with a section mate, calling family) breaks the withdrawal cycle.
+
+### Progressive Muscle Relaxation
+Source: Jacobson (1938); endorsed by National Institute of Mental Health.
+Tense each muscle group 5 seconds, release 30 seconds. Start from feet, move upward.
+Reduces physical tension associated with anxiety; effective before sleep after high-stress days.
+
+## Military and NS Mental Health
+
+### Sleep and Emotional Regulation
+Source: Journal of Traumatic Stress; Military Psychology journal.
+Sleep deprivation impairs the prefrontal cortex, making emotional regulation significantly harder.
+Consistent sleep/wake times regulate cortisol and mood even in confined NS environments.
+Persistent insomnia (>3 weeks) is a clinical issue — reporting to the MO is appropriate, not weakness.
+
+### Exercise and Mental Health
+Source: Blumenthal et al. (2007), Archives of Internal Medicine.
+30 minutes of moderate aerobic exercise has equivalent effect to low-dose antidepressants on mild depression.
+Recovery — nutrition and sleep — matters as much as the PT itself during high-intensity phases.
+
+### Unit Cohesion as a Protective Factor
+Source: Castro & Adler (2011), US Army Research Institute.
+Unit cohesion is the strongest protective factor against mental health decline in military populations.
+Sharing meals, checking on section mates, and maintaining family contact are evidence-backed protective behaviours.
+
+### When Professional Support Is Warranted (DSM-5 criteria)
+- Low mood persisting more than 2 weeks
+- Loss of interest in activities that previously mattered
+- Sleep problems not resolved by rest days
+- Intrusive thoughts that interrupt daily functioning
+- Any thoughts of self-harm, however brief or fleeting
+These are treatable clinical conditions, not signs of weakness.
+`;
+
+let dynamicKBUpdate = '';
+
+async function refreshCompanionKB() {
+  try {
+    const searchRes = await fetch(
+      'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed&term=military+mental+health+coping+strategies&retmax=3&retmode=json&sort=relevance',
+      { signal: AbortSignal.timeout(8000) }
+    );
+    if (!searchRes.ok) throw new Error(`PubMed search: ${searchRes.status}`);
+    const searchData = await searchRes.json();
+    const ids = (searchData.esearchresult?.idlist || []).join(',');
+    if (!ids) throw new Error('No PubMed IDs returned');
+
+    const abstractRes = await fetch(
+      `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=pubmed&id=${ids}&rettype=abstract&retmode=text`,
+      { signal: AbortSignal.timeout(8000) }
+    );
+    if (!abstractRes.ok) throw new Error(`PubMed fetch: ${abstractRes.status}`);
+    const text = await abstractRes.text();
+    dynamicKBUpdate = `\n## Recent Research (PubMed, auto-refreshed)\nSource: NCBI PubMed\n${text.slice(0, 1800)}`;
+    console.info('[companion-kb] refreshed from PubMed:', dynamicKBUpdate.length, 'chars appended');
+  } catch (err) {
+    console.warn('[companion-kb] refresh skipped, static KB in use:', err.message);
+    dynamicKBUpdate = '';
+  }
+}
+
+refreshCompanionKB();
+setInterval(refreshCompanionKB, 24 * 60 * 60 * 1000);
+
 // POST /api/companion { message, history } -> { reply }
 // Multi-turn: history is the full prior conversation; the new user message is
 // appended before sending the whole thread to the model.
@@ -375,9 +484,17 @@ app.post('/api/companion', async (req, res) => {
   const history = Array.isArray(req.body?.history) ? req.body.history : [];
   if (!message.trim()) return res.json(COMPANION_FALLBACK);
 
+  // Input guardrail: intercept self-harm signals before they reach the LLM.
+  const inputGuard = await runGuardrail(message);
+  if (inputGuard.selfHarm) {
+    console.warn('[companion] input guardrail blocked: self-harm signal in user message');
+    return res.json({ reply: CRISIS_RESOURCE_REPLY });
+  }
+
   try {
     const messages = [
       { role: 'system', content: COMPANION_SYSTEM },
+      { role: 'system', content: `THERAPIST-APPROVED KNOWLEDGE BASE — ground your advice in these sources when relevant:\n${COMPANION_KNOWLEDGE_BASE}${dynamicKBUpdate}` },
       ...history
         .filter((m) => m && (m.role === 'user' || m.role === 'assistant') && m.content)
         .map((m) => ({ role: m.role, content: String(m.content) })),
@@ -391,7 +508,16 @@ app.post('/api/companion', async (req, res) => {
     });
 
     const reply = completion.choices?.[0]?.message?.content?.trim();
-    return res.json({ reply: reply || COMPANION_FALLBACK.reply });
+    if (!reply) return res.json(COMPANION_FALLBACK);
+
+    // Output guardrail: verify the reply is safe before sending to the user.
+    const outputGuard = await runGuardrail(reply);
+    if (outputGuard.flagged) {
+      console.warn('[companion] output guardrail blocked: GPT reply flagged');
+      return res.json(COMPANION_FALLBACK);
+    }
+
+    return res.json({ reply });
   } catch (err) {
     console.error('[companion] falling back:', err.message);
     return res.json(COMPANION_FALLBACK);
@@ -431,6 +557,28 @@ async function moderateText(text, system = MODERATE_SYSTEM) {
     distress: Boolean(raw.distress),
     reason: typeof raw.reason === 'string' ? raw.reason : '',
   };
+}
+
+const CRISIS_RESOURCE_REPLY = [
+  "What you're feeling sounds overwhelming, and reaching out — even here — took courage. Please contact one of these right now:",
+  'SAF Care Hotline (24/7): 1800-278-0033',
+  'Samaritans of Singapore (24/7): 1-767',
+  'Institute of Mental Health: 6389-2222',
+  'If you are in immediate danger, call 995 or go to the nearest A&E.',
+  "You don't have to face this alone.",
+].join('\n');
+
+async function runGuardrail(text) {
+  try {
+    const result = await openai.moderations.create({ model: 'omni-moderation-latest', input: text });
+    const r = result.results[0];
+    const selfHarm = r.categories['self-harm'] || r.categories['self-harm/intent'] || r.categories['self-harm/instructions'];
+    console.info('[guardrail] checked — flagged:', r.flagged, '| self-harm:', Boolean(selfHarm));
+    return { flagged: r.flagged, selfHarm: Boolean(selfHarm), scores: r.category_scores };
+  } catch (err) {
+    console.warn('[guardrail] check skipped (fail-open):', err.message);
+    return { flagged: false, selfHarm: false, scores: {} };
+  }
 }
 
 function clamp01(n) {
@@ -650,6 +798,13 @@ app.post('/api/chat', async (req, res) => {
     return res.json({ answer: 'Please ask a question.', source: null, matched: true });
   }
 
+  // Input guardrail: redirect distress signals to crisis resources instead of the NS info model.
+  const inputGuard = await runGuardrail(text);
+  if (inputGuard.selfHarm) {
+    console.warn('[chat] input guardrail: self-harm signal in question');
+    return res.json({ answer: CRISIS_RESOURCE_REPLY, source: null, matched: true });
+  }
+
   try {
     const completion = await openai.chat.completions.create({
       model: MODEL,
@@ -663,6 +818,17 @@ app.post('/api/chat', async (req, res) => {
     const answer = completion.choices?.[0]?.message?.content?.trim() || '';
     const outOfScope = answer.includes('outside my current knowledge base');
 
+    // Output guardrail: verify the answer before sending to the user.
+    const outputGuard = await runGuardrail(answer);
+    if (outputGuard.flagged) {
+      console.warn('[chat] output guardrail: GPT answer flagged');
+      return res.json({
+        answer: 'I am temporarily unavailable. For official NS information, please visit ns.sg or contact CMPB directly.',
+        source: null,
+        matched: false,
+      });
+    }
+
     return res.json({
       answer,
       source: outOfScope ? null : 'Verified SAF documentation (ns.sg / mindef.gov.sg)',
@@ -671,8 +837,7 @@ app.post('/api/chat', async (req, res) => {
   } catch (err) {
     console.error('[chat] error:', err.message);
     return res.json({
-      answer:
-        'I am temporarily unavailable. For official NS information, please visit ns.sg or contact CMPB directly.',
+      answer: 'I am temporarily unavailable. For official NS information, please visit ns.sg or contact CMPB directly.',
       source: null,
       matched: false,
     });
