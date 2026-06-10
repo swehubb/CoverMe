@@ -642,6 +642,9 @@ function CommunityScreen({ state, updateState, activeModule }) {
 
 
 function PeerSupportWallScreen({ state, updateState }) {
+  const { user: authUser } = useAuth();
+  const supabaseId = authUser?.supabaseId || state.auth.profile?.supabaseId;
+  const myPostIds  = useRef(new Set());
   return (
     <section className="feed-screen">
       <ScreenHeader
@@ -651,8 +654,9 @@ function PeerSupportWallScreen({ state, updateState }) {
       <FeedScreenContent
         posts={state.community.wallPosts}
         onAddPost={async (post) => {
-          const dbId = await dbService.saveWallPost(state.auth.profile?.supabaseId, post);
-          const postWithDbId = dbId ? { ...post, _dbId: dbId } : post;
+          const dbId = await dbService.saveWallPost(supabaseId, post);
+          const postWithDbId = dbId ? { ...post, _dbId: dbId, userId: supabaseId } : post;
+          myPostIds.current.add(postWithDbId.id);
           updateState((current) => ({
             ...current,
             community: {
@@ -663,7 +667,7 @@ function PeerSupportWallScreen({ state, updateState }) {
         }}
         onReply={(postId, reply) => {
           const post = (state.community?.wallPosts || []).find((p) => p.id === postId);
-          dbService.saveWallReply(post?._dbId || postId, state.auth.profile?.supabaseId, reply.text);
+          dbService.saveWallReply(post?._dbId || postId, supabaseId, reply.text);
           updateState((current) => ({
             ...current,
             community: {
@@ -691,6 +695,18 @@ function PeerSupportWallScreen({ state, updateState }) {
             },
           }))
         }
+        onDeletePost={(postId, dbId) => {
+          myPostIds.current.delete(postId);
+          dbService.deleteWallPost(dbId);
+          updateState((current) => ({
+            ...current,
+            community: {
+              ...current.community,
+              wallPosts: current.community.wallPosts.filter((p) => p.id !== postId),
+            },
+          }));
+        }}
+        isMyPost={(post) => myPostIds.current.has(post.id) || (supabaseId && post.userId === supabaseId)}
         feedType="wall"
         moderate={nlpService.moderate}
         emptyText="Be the first to post to the wall."
@@ -706,6 +722,8 @@ function FeedScreenContent({
   onAddPost,
   onReply,
   onVote,
+  onDeletePost,
+  isMyPost,
   feedType,
   moderate,
   emptyText,
@@ -875,7 +893,16 @@ function FeedScreenContent({
                     <strong>{post.author}</strong>
                     <span>{shortDate((post.createdAt || getToday().toISOString()).slice(0, 10))}</span>
                   </div>
-                  {feedType === 'intel' && <span className="verified-badge">Q&A</span>}
+                  <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                    {feedType === 'intel' && <span className="verified-badge">Q&A</span>}
+                    {onDeletePost && isMyPost?.(post) && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); onDeletePost(post.id, post._dbId); }}
+                        title="Delete post"
+                        style={{ all: 'unset', cursor: 'pointer', color: 'var(--text-faint)', fontSize: 15, lineHeight: 1, padding: '2px 4px' }}
+                      >✕</button>
+                    )}
+                  </div>
                 </div>
                 <div className="badge-row">
                   <span className="info-badge">{isWall ? phaseLabel(post.phase) : post[filterKey]}</span>
@@ -1908,7 +1935,7 @@ const REACTIONS = [
   { key: 'respect', emoji: '🫡' },
 ];
 
-function FeedPostCard({ post, onReact, onAddReply }) {
+function FeedPostCard({ post, onReact, onAddReply, onDelete, isOwn }) {
   const [repliesOpen, setRepliesOpen] = useState(false);
   const [replyText, setReplyText]     = useState('');
   const [replyError, setReplyError]   = useState('');
@@ -1943,11 +1970,20 @@ function FeedPostCard({ post, onReact, onAddReply }) {
             <div className="mono-dim" style={{ fontSize: 11 }}>{post.unit} · {post.recency}</div>
           </div>
         </div>
-        {post.statline && (
-          <div style={{ fontFamily: 'var(--font-head)', fontWeight: 800, fontSize: 24, color: 'var(--amber)', lineHeight: 1 }}>
-            {post.statline}
-          </div>
-        )}
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+          {post.statline && (
+            <div style={{ fontFamily: 'var(--font-head)', fontWeight: 800, fontSize: 24, color: 'var(--amber)', lineHeight: 1 }}>
+              {post.statline}
+            </div>
+          )}
+          {onDelete && isOwn && (
+            <button
+              onClick={() => onDelete(post.id, post._dbId)}
+              title="Delete post"
+              style={{ all: 'unset', cursor: 'pointer', color: 'var(--text-faint)', fontSize: 15, lineHeight: 1, padding: '2px 4px' }}
+            >✕</button>
+          )}
+        </div>
       </div>
 
       {/* Chips */}
@@ -2226,6 +2262,9 @@ function ComposePostModal({ profile, attempts, onClose, onSubmit, initialAttempt
 
 function TrainingFeedScreen({ state, updateState }) {
   const profile   = state.auth.profile;
+  const { user: authUser } = useAuth();
+  const supabaseId = authUser?.supabaseId || profile?.supabaseId;
+  const myPostIds  = useRef(new Set());
   const location  = useLocation();
   const [showCompose, setShowCompose] = useState(location.state?.autoCompose ?? false);
   const [autoAttemptIdx] = useState(location.state?.attemptIdx ?? null);
@@ -2251,7 +2290,7 @@ function TrainingFeedScreen({ state, updateState }) {
 
   const addReply = (postId, text) => {
     const post = (state.social?.trainingFeedPosts || []).find((p) => p.id === postId);
-    dbService.saveFeedComment(post?._dbId || postId, state.auth.profile?.supabaseId, profile.fullName, text);
+    dbService.saveFeedComment(post?._dbId || postId, supabaseId, profile.fullName, text);
     updateState((c) => ({
       ...c,
       social: {
@@ -2267,14 +2306,26 @@ function TrainingFeedScreen({ state, updateState }) {
   };
 
   const publishPost = async (post) => {
-    const dbId = await dbService.saveFeedPost(state.auth.profile?.supabaseId, post);
-    const postWithDbId = dbId ? { ...post, _dbId: dbId } : post;
+    const dbId = await dbService.saveFeedPost(supabaseId, post);
+    const postWithDbId = dbId ? { ...post, _dbId: dbId, userId: supabaseId } : post;
+    myPostIds.current.add(postWithDbId.id);
     updateState((c) => ({
       ...c,
       social: { ...c.social, trainingFeedPosts: [postWithDbId, ...c.social.trainingFeedPosts] },
     }));
     setShowCompose(false);
   };
+
+  const deletePost = (postId, dbId) => {
+    myPostIds.current.delete(postId);
+    dbService.deleteFeedPost(dbId);
+    updateState((c) => ({
+      ...c,
+      social: { ...c.social, trainingFeedPosts: c.social.trainingFeedPosts.filter((p) => p.id !== postId) },
+    }));
+  };
+
+  const isMyPost = (post) => myPostIds.current.has(post.id) || (supabaseId && post.userId === supabaseId);
 
   return (
     <div style={{ height: '100%', overflow: 'auto', padding: '28px 36px' }}>
@@ -2298,6 +2349,8 @@ function TrainingFeedScreen({ state, updateState }) {
             post={post}
             onReact={react}
             onAddReply={addReply}
+            isOwn={isMyPost(post)}
+            onDelete={deletePost}
           />
         ))}
       </div>
@@ -2419,6 +2472,7 @@ function JournalScreen({ state, updateState }) {
   const [crisisState, setCrisisState] = useState(false);
   const [dismissedDip, setDismissedDip] = useState(false);
   const [trendInfo, setTrendInfo] = useState(null);
+  const [expandedReflectionId, setExpandedReflectionId] = useState(null);
 
   // AI trend narrative: recomputed whenever the recent scores change (e.g. a new
   // entry is submitted). Needs at least 3 entries — otherwise we show nothing.
@@ -2643,16 +2697,35 @@ function JournalScreen({ state, updateState }) {
           <div className="empty-state">No reflections yet. Your first entry will appear here.</div>
         ) : allReflections.map((item, index) => {
           const score = entryScore(item);
+          const rowId = item.id ?? `${entryDay(item)}-${index}`;
+          const isExpanded = expandedReflectionId === rowId;
           return (
-            <Panel key={item.id ?? `${entryDay(item)}-${index}`} flush
+            <Panel key={rowId} flush
               className="past-entry-row"
-              style={{ borderLeftColor: score < 0.5 ? 'var(--danger)' : 'var(--accent)' }}
+              style={{ borderLeftColor: score < 0.5 ? 'var(--danger)' : 'var(--accent)', cursor: 'pointer', flexWrap: 'wrap', alignItems: 'flex-start', gap: 0 }}
+              onClick={() => setExpandedReflectionId(isExpanded ? null : rowId)}
             >
-              <span className="mono" style={{ color: 'var(--text-dim)', fontSize: 12, width: 52 }}>{shortDate(entryDay(item))}</span>
-              <span className="past-entry-score" style={{ color: score < 0.5 ? '#D98A55' : 'var(--amber)' }}>
-                {score.toFixed(2)}
-              </span>
-              <span style={{ flex: 1, color: 'var(--text-dim)', fontSize: 13.5 }}>{item.text}</span>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, width: '100%' }}>
+                <span className="mono" style={{ color: 'var(--text-dim)', fontSize: 12, width: 52, flexShrink: 0 }}>{shortDate(entryDay(item))}</span>
+                <span className="past-entry-score" style={{ color: score < 0.5 ? '#D98A55' : 'var(--amber)', flexShrink: 0 }}>
+                  {score.toFixed(2)}
+                </span>
+                <span style={{
+                  flex: 1, color: 'var(--text-dim)', fontSize: 13.5,
+                  overflow: 'hidden', display: '-webkit-box', WebkitBoxOrient: 'vertical',
+                  WebkitLineClamp: isExpanded ? 'unset' : 1,
+                }}>{item.text}</span>
+              </div>
+              {isExpanded && (
+                <div style={{ width: '100%', marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
+                  {item.prompt && (
+                    <div className="mono-dim" style={{ fontSize: 11, marginBottom: 10 }}>PROMPT · {item.prompt}</div>
+                  )}
+                  <div style={{ color: 'var(--text)', fontSize: 14, lineHeight: 1.8, fontStyle: 'italic' }}>
+                    "{expandReflection(item)}"
+                  </div>
+                </div>
+              )}
             </Panel>
           );
         })}
@@ -3693,6 +3766,43 @@ function getLongestStreak(entries) {
 }
 
 // Short, supportive read-back for a single past reflection (the "comment" in the list).
+function expandReflection(entry) {
+  const score = entryScore(entry);
+  const seed = ((entry.text || '') + (entry.timestamp || '')).split('').reduce((a, c) => a + c.charCodeAt(0), 0);
+  const pick = (arr) => arr[seed % arr.length];
+
+  if (score >= 0.75) return pick([
+    "Had a solid session this morning — everything landed the way it was supposed to, and I didn't have to fight myself to get through it. The afternoon was quieter, but in a good way. Felt more settled than I have in a while.",
+    "Training went well today. I was sharper, the reps felt cleaner, and I didn't clock out mentally before it was over. Whatever sleep I got last night helped and I carried it through the rest of the day.",
+    "One of those days where the routine actually carried me rather than just grinding me down. Did the work, kept pace, had a decent meal. Didn't need much more than that to feel okay.",
+    "Started slow but found my footing after the first hour. By the time we broke for the afternoon I felt more like myself — present, less in my own head. Good day overall.",
+  ]);
+  if (score >= 0.65) return pick([
+    "Nothing standout, but nothing went sideways either. The training was manageable, I got through admin without too much friction, and my head was in the right place for most of it.",
+    "Did what needed doing. Pace was reasonable, the pressure felt familiar rather than crushing. I've had worse weeks — finding a steadier rhythm makes a real difference.",
+    "A bit flat in the morning but things levelled out by mid-afternoon. Kept the routine going, stayed on top of things. Not a great day, but a functional one.",
+    "Not my best showing but a solid one. Got through training, kept my head, didn't let the small stuff pile up. That's the standard on most days and I hit it.",
+  ]);
+  if (score >= 0.50) return pick([
+    "Mixed day. Some parts worked, others didn't. I felt distracted during the session and couldn't quite lock in, but I finished what I started. Flat by the evening, but nothing alarming.",
+    "Woke up okay but it wore off by mid-morning. Finished the PT, got through the afternoon, but I was running on autopilot by the end. Nothing wrong — just a lot.",
+    "There's a kind of grey that comes with certain days in service. Not bad, not good — just grey. I did the work, I was present enough. That had to be enough today.",
+    "A bit heavy without a clear reason. Went through the motions, stayed level, made it to the end of the day. Couldn't pinpoint what was off, just something.",
+  ]);
+  if (score >= 0.35) return pick([
+    "Harder day. The kind where even the routine feels like a bigger lift than it should. Got through it, but I was quieter than usual and not really present by the end of it.",
+    "Slept poorly and it showed. Dragged myself through the morning, made it work, but the weight stuck around. Didn't talk about it much. Just kept moving.",
+    "Something about today sat heavy. Couldn't pinpoint it — just a general low that made everything feel more effortful. I functioned, but I was carrying something.",
+    "Off day. Nothing catastrophic, but I wasn't right. Kept it together in front of the others, got to the end of the day. It'll pass — it always does.",
+  ]);
+  return pick([
+    "Rough one. I was struggling before the day even started and it didn't get much lighter. Kept to myself, did the minimum, held it together. Writing this down feels like the only honest thing I could do today.",
+    "This one hit different. Couldn't shake the weight all day — not during training, not after. Got through it somehow. I don't really want to talk about it but I needed to write it somewhere.",
+    "Not okay today, and I knew it early. Pushed through what I had to, kept my face straight, but inside it was loud. There's only so long you can carry that before it shows.",
+    "Everything was harder than it should have been. The simplest things took effort and I was there in body but checked out everywhere else. Days like this remind you how much this place takes.",
+  ]);
+}
+
 function reflectionComment(entry) {
   const score = Math.round(entryScore(entry) * 100);
   const dominant = entry.sentiment?.dominant || dominantFromScore(entryScore(entry));
@@ -3704,6 +3814,19 @@ function reflectionComment(entry) {
   if (score >= 45) return 'A mixed, fairly neutral day. Nothing alarming in the language.';
   if (score >= 30) return 'The tone leaned low. If several days read like this, Sentinel will quietly offer you options.';
   return 'This reading was quite low. Be gentle with yourself — support is one tap away whenever you want it.';
+}
+
+function reflectionNarrative(entry) {
+  const score = Math.round(entryScore(entry) * 100);
+  const dominant = entry.sentiment?.dominant || dominantFromScore(entryScore(entry));
+  if (dominant === 'crisis') {
+    return 'This was a hard moment to put into words. Support resources were surfaced immediately — you didn\'t have to carry it alone. Looking back, reaching for help or even just naming it was the right move.';
+  }
+  if (score >= 75) return 'This was a good day — the kind worth holding onto. Whether it was a training milestone, a decent run, or just feeling more like yourself, the score reflects something that was genuinely working. Days like this anchor the harder ones.';
+  if (score >= 60) return 'A solid day overall. Not every day has to be remarkable to count — steady effort and a clear head are their own kind of win. The trend held up here, which matters more than any single session.';
+  if (score >= 45) return 'A mixed one. Some parts dragged, others were fine. That balance is more common than it looks from the outside — it doesn\'t signal anything alarming, just the ordinary texture of service life on a normal day.';
+  if (score >= 30) return 'This one sat a bit heavier. The weight of whatever was going on came through in how you wrote. It didn\'t break anything, but it registered — and that\'s worth acknowledging. Getting through a low day still counts.';
+  return 'A difficult day, honestly. The kind where even small things take real effort and the bigger picture feels distant. You put it into words anyway, which is harder than it sounds. That matters, even if it didn\'t feel like it at the time.';
 }
 
 function StreakCalendar({ entries, streakDays }) {
