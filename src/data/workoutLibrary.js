@@ -106,6 +106,26 @@ export function buildDefaultPlan(pes) {
   return { generatedAt: new Date().toISOString(), weekTemplate: buildDefaultWeekTemplate(pes) };
 }
 
+// Restrict a weekly template to exactly `daysPerWeek` training days, placed on
+// consecutive weekdays starting Monday (the rest become rest days). Keeps the
+// plan honest to the volume the user asked for, regardless of how the template
+// — or the AI — laid out its training vs rest days.
+export function restrictTemplateToDays(weekTemplate, daysPerWeek) {
+  const n = Math.max(1, Math.min(DAYS.length, Number(daysPerWeek) || DAYS.length));
+  // Real training day-plans, in Monday→Sunday order.
+  const trainingPlans = DAYS
+    .map((day) => weekTemplate?.[day])
+    .filter((dayPlan) => !isRestTemplateDay(dayPlan));
+  const chosen = trainingPlans.slice(0, n);
+  const days = {};
+  DAYS.forEach((day, i) => {
+    days[day] = i < chosen.length
+      ? { focus: chosen[i].focus, exercises: chosen[i].exercises.map((ex) => ({ ...ex })) }
+      : { focus: 'Rest', exercises: [] };
+  });
+  return days;
+}
+
 export const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 // Weekday name for a Date (matches the keys used in a week template).
@@ -143,6 +163,7 @@ export default {
   pesBand,
   buildDefaultWeekTemplate,
   buildDefaultPlan,
+  restrictTemplateToDays,
   weekdayOf,
   isRestTemplateDay,
   formatExerciseDetail,

@@ -622,7 +622,12 @@ select.inp { cursor:pointer; appearance:none; background-image:url("data:image/s
 .wk-pes { color:var(--amber); font-family:var(--font-mono); }
 
 .wk-section { margin-bottom:26px; }
-.wk-section-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
+.wk-section-head { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:12px; }
+.wk-section-toggle { all:unset; cursor:pointer; display:flex; align-items:center; gap:8px; flex:1; min-width:0; min-height:32px; -webkit-tap-highlight-color:transparent; }
+.wk-section-toggle:focus-visible { outline:1px solid var(--accent-line); outline-offset:3px; border-radius:4px; }
+.wk-section-chevron { font-size:11px; color:var(--text-faint); transition:transform 0.2s ease; flex-shrink:0; }
+.wk-section-chevron.collapsed { transform:rotate(-90deg); }
+.wk-section-count { font-family:var(--font-mono); font-size:12px; }
 .wk-generating { color:var(--accent-text); }
 .wk-generating .blink { margin-right:6px; }
 .wk-empty { padding:22px; }
@@ -742,8 +747,33 @@ select.inp { cursor:pointer; appearance:none; background-image:url("data:image/s
 .wk-q-scheduled { margin-top:auto; text-align:center; padding:9px; border:1px dashed var(--border); border-radius:6px; }
 
 @media(max-width:720px) {
-  .wk-page { padding:20px; }
+  .wk-page { padding:18px 16px 40px; }
   .wk-session { padding:18px; }
-  .wk-streak-card { gap:20px; }
-  .wk-intake-grid { grid-template-columns:1fr; }
+  .wk-title { font-size:30px; }
+  .wk-head { margin-bottom:18px; }
+  .wk-section { margin-bottom:20px; }
+
+  /* UP NEXT — one card at a time with a peek + snap */
+  .wk-q-row { gap:10px; scroll-snap-type:x mandatory; -webkit-overflow-scrolling:touch; }
+  .wk-q-card { flex:0 0 84%; scroll-snap-align:start; }
+
+  /* tools cluster wraps under the heading instead of squashing it */
+  .wk-section-head { flex-wrap:wrap; }
+  .wk-section-tools { gap:12px; }
+
+  /* STREAK — stack grid above the stats, stats spread evenly */
+  .wk-streak-card { gap:18px; flex-direction:column; align-items:stretch; }
+  .wk-streak-stats { gap:0; justify-content:space-between; }
+  .wk-streak-legend { flex-basis:100%; justify-content:flex-end; }
+
+  /* PAST WORKOUTS — let the meta wrap cleanly */
+  .wk-log-summary { gap:10px; padding:13px 14px; }
+  .wk-log-meta { gap:8px 10px; }
+  .wk-log-day { font-size:16px; }
+
+  /* session logger fits a phone */
+  .wk-session-title { font-size:21px; }
+  .wk-timer { font-size:24px; }
+  .wk-run-fields { grid-template-columns:1fr 44px; }
+  .wk-run-notes { grid-column:1 / -1; }
 }
