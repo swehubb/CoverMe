@@ -31,6 +31,7 @@ import { peerWallPosts, wallPhases } from './data/mockPeerWall';
 import { platoonMembers, peerSupportLead } from './data/mockPlatoon';
 import { demoIpptAttemptsByAccount } from './data/mockAccounts';
 import nlpService from './services/nlpService';
+import * as dbService from './services/dbService';
 import { notify, crisisResources } from './services/mockNotification';
 import {
   buildTrainingPlan,
@@ -273,6 +274,33 @@ function App() {
       clearSession();
     }
   }, [clearSession, state.auth.isAuthenticated, state.auth.profile, state.ui.activeModule, syncAuthSession]);
+
+  // Load persisted data from Supabase when a user authenticates
+  const supabaseId = state.auth.profile?.supabaseId;
+  useEffect(() => {
+    if (!supabaseId) return;
+
+    dbService.loadIpptAttempts(supabaseId).then((attempts) => {
+      if (attempts?.length) {
+        setState((c) => ({
+          ...c,
+          ippt: { ...c.ippt, attempts, attemptsByAccount: { ...c.ippt.attemptsByAccount, [c.auth.profile.id]: attempts } },
+        }));
+      }
+    });
+
+    dbService.loadJournalEntries(supabaseId).then((entries) => {
+      if (entries?.length) setState((c) => ({ ...c, journal: { ...c.journal, entries } }));
+    });
+
+    dbService.loadFeedPosts().then((posts) => {
+      if (posts?.length) setState((c) => ({ ...c, social: { ...c.social, trainingFeedPosts: posts } }));
+    });
+
+    dbService.loadWallPosts().then((posts) => {
+      if (posts?.length) setState((c) => ({ ...c, community: { ...c.community, wallPosts: posts } }));
+    });
+  }, [supabaseId]);
 
   const updateState = (updater) => {
     setState((current) => updater(current));
@@ -606,31 +634,30 @@ function PeerSupportWallScreen({ state, updateState }) {
       />
       <FeedScreenContent
         posts={state.community.wallPosts}
-        onAddPost={(post) =>
+        onAddPost={async (post) => {
+          const dbId = await dbService.saveWallPost(state.auth.profile?.supabaseId, post);
+          const postWithDbId = dbId ? { ...post, _dbId: dbId } : post;
           updateState((current) => ({
             ...current,
             community: {
               ...current.community,
-              wallPosts: [post, ...current.community.wallPosts],
+              wallPosts: [postWithDbId, ...current.community.wallPosts],
             },
-          }))
-        }
-        onReply={(postId, reply) =>
+          }));
+        }}
+        onReply={(postId, reply) => {
+          const post = (state.community?.wallPosts || []).find((p) => p.id === postId);
+          dbService.saveWallReply(post?._dbId || postId, state.auth.profile?.supabaseId, reply.text);
           updateState((current) => ({
             ...current,
             community: {
               ...current.community,
-              wallPosts: current.community.wallPosts.map((post) =>
-                post.id === postId
-                  ? {
-                      ...post,
-                      replies: [...(post.replies || []), reply],
-                    }
-                  : post,
+              wallPosts: current.community.wallPosts.map((p) =>
+                p.id === postId ? { ...p, replies: [...(p.replies || []), reply] } : p,
               ),
             },
-          }))
-        }
+          }));
+        }}
         onVote={(postId, upDelta, downDelta) =>
           updateState((current) => ({
             ...current,
@@ -1035,6 +1062,8 @@ function BuddyTapScreen({ state, updateState }) {
     const priorCount = taps.filter((tap) => tap.toUserId === buddyId).length;
     const newCount = priorCount + 1;
 
+    dbService.saveBuddyTap(state.auth.profile?.supabaseId, buddyId, buddyComment.trim());
+
     updateState((current) => ({
       ...current,
       community: {
@@ -1049,9 +1078,11 @@ function BuddyTapScreen({ state, updateState }) {
     setSubmittedConcern(true);
 
     if (newCount >= 3) {
+      const outreachReason = 'A few people in your unit noticed you may be having a rough week.';
       updateState((current) => {
         const prompts = current.support?.outreachPrompts || [];
         const hasOpenPrompt = prompts.some((prompt) => prompt.userId === buddyId && prompt.status !== 'dismissed');
+        if (!hasOpenPrompt) dbService.saveOutreachPrompt(buddyId, outreachReason);
         return {
           ...current,
           support: {
@@ -1065,7 +1096,7 @@ function BuddyTapScreen({ state, updateState }) {
                     userId: buddyId,
                     status: 'pending',
                     createdAt: new Date().toISOString(),
-                    reason: 'A few people in your unit noticed you may be having a rough week.',
+                    reason: outreachReason,
                   },
                 ],
           },
@@ -1276,7 +1307,7 @@ function TrainScreen({ state, updateState }) {
 
   const formToSeconds = (f) => (parseInt(f.runMins) || 0) * 60 + (parseInt(f.runSecs) || 0);
 
-  const submitAttempt = () => {
+  const submitAttempt = async () => {
     const runSeconds = formToSeconds(form);
     if (!form.pushups || !form.situps || !runSeconds) return;
     const pushups = Number(form.pushups);
@@ -1292,14 +1323,17 @@ function TrainScreen({ state, updateState }) {
     if (!attempts.length || runSeconds < (pbs?.runSeconds ?? 99999))
       newPbs.push({ exercise: '2.4km Run', value: formatRunTime(runSeconds) });
 
+    const dbId = await dbService.saveIpptAttempt(state.auth.profile?.supabaseId, newAttempt);
+    const attempt = { ...newAttempt, _dbId: dbId };
+
     updateState((c) => ({
       ...c,
       ippt: {
         ...c.ippt,
-        attempts: [...c.ippt.attempts, newAttempt],
+        attempts: [...c.ippt.attempts, attempt],
         attemptsByAccount: {
           ...(c.ippt.attemptsByAccount || {}),
-          [accountId]: [...c.ippt.attempts, newAttempt],
+          [accountId]: [...c.ippt.attempts, attempt],
         },
       },
     }));
@@ -1327,9 +1361,12 @@ function TrainScreen({ state, updateState }) {
   const saveEdit = () => {
     const runSeconds = formToSeconds(editForm);
     if (!editForm.pushups || !editForm.situps || !runSeconds) return;
+    const updated_attempt = { date: editForm.date, pushups: Number(editForm.pushups), situps: Number(editForm.situps), runSeconds };
     updateState((c) => {
       const updated = [...c.ippt.attempts];
-      updated[editIdx] = { date: editForm.date, pushups: Number(editForm.pushups), situps: Number(editForm.situps), runSeconds };
+      const dbId = updated[editIdx]?._dbId;
+      updated[editIdx] = { ...updated_attempt, _dbId: dbId };
+      dbService.updateIpptAttempt(dbId, updated_attempt);
       return {
         ...c,
         ippt: {
@@ -1345,6 +1382,8 @@ function TrainScreen({ state, updateState }) {
 
   const deleteAttempt = (originalIdx) => {
     updateState((c) => {
+      const dbId = c.ippt.attempts[originalIdx]?._dbId;
+      dbService.deleteIpptAttempt(dbId);
       const updated = c.ippt.attempts.filter((_, i) => i !== originalIdx);
       return {
         ...c,
@@ -1992,6 +2031,8 @@ function TrainingFeedScreen({ state, updateState }) {
   };
 
   const addReply = (postId, text) => {
+    const post = (state.social?.trainingFeedPosts || []).find((p) => p.id === postId);
+    dbService.saveFeedComment(post?._dbId || postId, state.auth.profile?.supabaseId, profile.fullName, text);
     updateState((c) => ({
       ...c,
       social: {
@@ -2006,10 +2047,12 @@ function TrainingFeedScreen({ state, updateState }) {
     }));
   };
 
-  const publishPost = (post) => {
+  const publishPost = async (post) => {
+    const dbId = await dbService.saveFeedPost(state.auth.profile?.supabaseId, post);
+    const postWithDbId = dbId ? { ...post, _dbId: dbId } : post;
     updateState((c) => ({
       ...c,
-      social: { ...c.social, trainingFeedPosts: [post, ...c.social.trainingFeedPosts] },
+      social: { ...c.social, trainingFeedPosts: [postWithDbId, ...c.social.trainingFeedPosts] },
     }));
     setShowCompose(false);
   };
@@ -2194,20 +2237,21 @@ function JournalScreen({ state, updateState }) {
       return;
     }
 
+    const newEntry = {
+      id: Date.now(),
+      timestamp: new Date().toISOString(),
+      text: entry.trim(),
+      sentiment: result,
+      prompt,
+    };
+
+    dbService.saveJournalEntry(state.auth.profile?.supabaseId, newEntry);
+
     updateState((current) => ({
       ...current,
       journal: {
         ...current.journal,
-        entries: [
-          ...current.journal.entries,
-          {
-            id: Date.now(),
-            timestamp: new Date().toISOString(),
-            text: entry.trim(),
-            sentiment: result,
-            prompt,
-          },
-        ],
+        entries: [...current.journal.entries, newEntry],
       },
     }));
 

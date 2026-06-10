@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import Insignia from '../components/shared/Insignia';
 import Panel from '../components/ui/Panel';
-import { getDemoAccountByUid } from '../data/mockAccounts';
 
 function normalizeProfile(profile) {
   if (!profile) return null;
@@ -39,14 +38,21 @@ export default function LandingPage({ state, updateState }) {
       setShowPasscode(true);
       return;
     }
-    const account = getDemoAccountByUid(uid);
-    if (!account) {
-      setLoginError('Incorrect UID. Check the demo login ID and try again.');
+    if (!uid.trim() || !password) {
+      setLoginError('Enter your UID and password.');
       return;
     }
     setLoginError('');
     setLoading(true);
-    const profile = normalizeProfile(await login(account.uid));
+
+    const result = await login(uid.trim().toLowerCase(), password);
+    if (!result.success) {
+      setLoginError(result.error || 'Login failed. Check your credentials.');
+      setLoading(false);
+      return;
+    }
+
+    const profile = normalizeProfile(result.user);
     const isStaff = profile.role === 'peer-support';
     updateState((current) => ({
       ...current,
