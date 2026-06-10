@@ -120,7 +120,11 @@ const defaultState = {
     intelPosts: peerIntelPosts,
     wallPosts: peerWallPosts,
     concerns: [],
-    buddyTaps: [],
+    buddyTaps: [
+      { id: 'tap-seed-1', toUserId: 'platoon-02', fromUserId: 'platoon-01', text: '', timestamp: '2026-05-18T20:30:00.000Z' },
+      { id: 'tap-seed-2', toUserId: 'platoon-02', fromUserId: 'platoon-04', text: '', timestamp: '2026-05-18T20:32:00.000Z' },
+      { id: 'tap-seed-3', toUserId: 'platoon-02', fromUserId: 'platoon-05', text: '', timestamp: '2026-05-18T20:35:00.000Z' },
+    ],
   },
   support: {
     pslThreads: [
@@ -147,6 +151,7 @@ const defaultState = {
         reason: 'A few people in your unit noticed you may be having a rough week.',
       },
     ],
+    okayNotifications: [],
   },
   social: {
     trainingFeed: trainingActivity,
@@ -239,6 +244,12 @@ function loadState() {
     }
     if (parsed?.support && !parsed.support.outreachPrompts) {
       parsed.support.outreachPrompts = defaultState.support.outreachPrompts;
+    }
+    if (parsed?.support && !parsed.support.okayNotifications) {
+      parsed.support.okayNotifications = [];
+    }
+    if (parsed?.community && !parsed.community.buddyTaps?.some(t => t.fromUserId)) {
+      parsed.community.buddyTaps = defaultState.community.buddyTaps;
     }
     if (
       parsed?.auth?.profile?.enlistmentDate === '2026-09-14' ||
@@ -733,10 +744,33 @@ function HomeDashboard({ state, updateState, phase, activeModule }) {
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-end', flexShrink: 0 }}>
             <button className="primary-button small" onClick={() => navigate('/escalation')}>View support options</button>
-            <button className="primary-button small" onClick={() => updateState((current) => ({
-              ...current,
-              support: { ...current.support, outreachPrompts: (current.support?.outreachPrompts || []).map((p) => p.id === outreachPrompt.id ? { ...p, status: 'dismissed' } : p) },
-            }))}>I'm okay</button>
+            <button className="primary-button small" onClick={() => updateState((current) => {
+              const tapperIds = [...new Set(
+                (current.community.buddyTaps || [])
+                  .filter((tap) => tap.toUserId === outreachPrompt.userId && tap.fromUserId)
+                  .map((tap) => tap.fromUserId),
+              )];
+              const recipientMember = platoonMembers.find((m) => m.id === outreachPrompt.userId);
+              const recipientName = recipientMember?.name || 'Your mate';
+              const newOkayNotifs = tapperIds.map((tapperId) => ({
+                id: `okay-${tapperId}-${Date.now()}`,
+                toUserId: tapperId,
+                recipientMemberId: outreachPrompt.userId,
+                recipientName,
+                timestamp: new Date().toISOString(),
+                read: false,
+              }));
+              return {
+                ...current,
+                support: {
+                  ...current.support,
+                  outreachPrompts: (current.support?.outreachPrompts || []).map(
+                    (p) => p.id === outreachPrompt.id ? { ...p, status: 'dismissed' } : p,
+                  ),
+                  okayNotifications: [...(current.support?.okayNotifications || []), ...newOkayNotifs],
+                },
+              };
+            })}>I'm okay</button>
           </div>
         </div>
       )}
@@ -1218,9 +1252,13 @@ function BuddyTapScreen({ state, updateState }) {
   const [blockReason, setBlockReason] = useState('');
   const [thresholdNotice, setThresholdNotice] = useState(null);
 
+  const profile = state.auth.profile;
   const taps = state.community.buddyTaps || [];
   const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
   const weeklyCount = taps.filter((tap) => new Date(tap.timestamp).getTime() >= weekAgo).length;
+  const myOkayNotifs = (state.support?.okayNotifications || []).filter(
+    (n) => n.toUserId === profile?.memberId && !n.read,
+  );
 
   useEffect(() => {
     if (!selectableBuddies.some((member) => member.id === buddyId)) {
@@ -1257,7 +1295,7 @@ function BuddyTapScreen({ state, updateState }) {
         ...current.community,
         buddyTaps: [
           ...(current.community.buddyTaps || []),
-          { id: Date.now(), toUserId: buddyId, text: buddyComment.trim(), timestamp: new Date().toISOString() },
+          { id: Date.now(), toUserId: buddyId, fromUserId: current.auth.profile?.memberId, text: buddyComment.trim(), timestamp: new Date().toISOString() },
         ],
       },
     }));
@@ -1308,6 +1346,23 @@ function BuddyTapScreen({ state, updateState }) {
       <div className="badge-row">
         <span className="info-badge">No commander is notified. No one is identified.</span>
       </div>
+      {myOkayNotifs.map((notif) => (
+        <div key={notif.id} className="panel" style={{ padding: '16px 20px', marginBottom: 14, borderLeftColor: 'var(--success)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16 }}>
+          <div>
+            <span className="label" style={{ color: 'var(--success)', marginBottom: 4, display: 'block' }}>▲ UPDATE FROM YOUR CHECK-IN</span>
+            <p style={{ margin: 0 }}><strong>{notif.recipientName}</strong> saw your concern and said they're okay. Thanks for looking out for them.</p>
+          </div>
+          <button className="soft-button" style={{ flexShrink: 0 }} onClick={() => updateState((current) => ({
+            ...current,
+            support: {
+              ...current.support,
+              okayNotifications: (current.support.okayNotifications || []).map(
+                (n) => n.id === notif.id ? { ...n, read: true } : n,
+              ),
+            },
+          }))}>Got it</button>
+        </div>
+      ))}
       <div className="buddy-card">
         <h2>Cover a mate.</h2>
         <p>If someone seems off, let us know. Three independent reports send them an anonymous message of support. No names. No commanders.</p>
