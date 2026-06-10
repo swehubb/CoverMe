@@ -123,4 +123,19 @@ export async function getWeekendPlan(payload) {
   }
 }
 
-export default { analyze, moderate, moderateBuddy, companion, trendNarrative, getWeekendPlan };
+// recommendWorkout(pes, recentLogs) -> week plan { useDefault: false, days } | { useDefault: true }
+// recentLogs: up to the last 5 completed workout sessions ([] if no history).
+// Always resolves — never throws — so the workout screen can fall back to the
+// local PES default template on any failure.
+export async function recommendWorkout(pes, recentLogs = []) {
+  try {
+    const data = await postJSON('/api/recommend-workout', { pes, recentLogs });
+    if (data?.useDefault || !data?.days) return { useDefault: true };
+    return { useDefault: false, days: data.days };
+  } catch (err) {
+    console.warn('[nlpService.recommendWorkout] fallback:', err.message);
+    return { useDefault: true };
+  }
+}
+
+export default { analyze, moderate, moderateBuddy, companion, trendNarrative, getWeekendPlan, recommendWorkout };

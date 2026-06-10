@@ -44,6 +44,8 @@ import ConsentPage from './pages/ConsentPage';
 import EnlistDashboardPage from './pages/EnlistDashboardPage';
 import WhatToExpectPage from './pages/WhatToExpectPage';
 import FitnessPrepPage from './pages/FitnessPrepPage';
+import PreEnlistmentWorkout from './pages/PreEnlistmentWorkout';
+import WorkoutSession from './pages/WorkoutSession';
 import AiChatPage from './pages/AiChatPage';
 import PeerIntelPage from './pages/PeerIntelPage';
 
@@ -126,6 +128,10 @@ const defaultState = {
   social: {
     trainingFeed: trainingActivity,
     trainingFeedPosts: trainingActivity,
+  },
+  workout: {
+    logs: [],
+    weekPlan: null,
   },
   ui: {
     activeModule: '',
@@ -245,6 +251,7 @@ function loadState() {
       community: { ...defaultState.community, ...parsed.community },
       support: { ...defaultState.support, ...parsed.support },
       social: { ...defaultState.social, ...parsed.social },
+      workout: { ...defaultState.workout, ...parsed.workout },
       ui: { ...defaultState.ui, ...parsed.ui },
     };
   } catch {
@@ -397,6 +404,8 @@ function AppShell({ state, updateState }) {
               element={<ModuleHomeRoute module="serve" state={state} updateState={updateState} phase={phase} />}
             />
             <Route path="/fitness-prep" element={<FitnessPrepPage state={state} />} />
+            <Route path="/enlist/workout" element={<PreEnlistmentWorkout state={state} updateState={updateState} />} />
+            <Route path="/enlist/workout-session/:day" element={<WorkoutSession state={state} updateState={updateState} />} />
             <Route path="/ai-chat" element={<AiChatPage />} />
             <Route path="/peer-intel" element={<PeerIntelPage state={state} />} />
             <Route path="/peer-support" element={<PeerSupportWallScreen state={state} updateState={updateState} />} />
