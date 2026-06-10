@@ -336,7 +336,7 @@ function ModuleHomeRoute({ module, state, updateState, phase }) {
   if (module === 'enlist') {
     return <EnlistDashboardPage state={state} updateState={updateState} phase={phase} />;
   }
-  return <HomeDashboard state={state} phase={phase} activeModule={module} />;
+  return <HomeDashboard state={state} updateState={updateState} phase={phase} activeModule={module} />;
 }
 
 function AppRoutes({ state, updateState }) {
@@ -465,7 +465,7 @@ function AppShell({ state, updateState }) {
 
 
 
-function HomeDashboard({ state, phase, activeModule }) {
+function HomeDashboard({ state, updateState, phase, activeModule }) {
   const navigate = useNavigate();
   const profile = state.auth.profile;
   const firstName = profile.fullName.split(' ')[1] || profile.fullName.split(' ')[0];
@@ -604,9 +604,25 @@ function HomeDashboard({ state, phase, activeModule }) {
             <h3>Some mates are looking out for you.</h3>
             <p>{outreachPrompt.reason} You can talk to the peer support leader anonymously; they will not see your name.</p>
           </div>
-          <button className="primary-button small" onClick={() => navigate('/escalation')}>
-            View support options
-          </button>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-end' }}>
+            <button className="primary-button small" onClick={() => navigate('/escalation')}>
+              View support options
+            </button>
+            <button
+              className="primary-button small"
+              onClick={() => updateState((current) => ({
+                ...current,
+                support: {
+                  ...current.support,
+                  outreachPrompts: (current.support?.outreachPrompts || []).map((p) =>
+                    p.id === outreachPrompt.id ? { ...p, status: 'dismissed' } : p
+                  ),
+                },
+              }))}
+            >
+              I'm okay
+            </button>
+          </div>
         </Panel>
       )}
 
@@ -2668,22 +2684,17 @@ function JournalScreen({ state, updateState }) {
             </div>
           ))}
         </Panel>
-        <Panel style={{ padding: 26 }}>
+        <Panel style={{ padding: 26, cursor: 'pointer' }} onClick={() => navigate('/escalation')}>
           <span className="label" style={{ marginBottom: 6 }}>▲ SUPPORT RESOURCES</span>
-          <div className="mono-dim" style={{ marginBottom: 18 }}>CONFIDENTIAL · ALWAYS AVAILABLE</div>
+          <div className="mono-dim" style={{ marginBottom: 18 }}>CONFIDENTIAL · ALWAYS AVAILABLE · TAP TO OPEN →</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {[
-              ['SAF COUNSELLING CENTRE', 'Direct counsellor pathway', 'BOOK'],
-              ['SAF COUNSELLING CARELINE', '24-hour', '1800 278 0022'],
-              ['IMH MENTAL HEALTH HELPLINE', '24-hour', '6389 2222'],
-              ['SAMARITANS OF SINGAPORE', 'SOS · 24-hour', '1767'],
-            ].map(([t, sub, n]) => (
-              <div key={t} className="crisis-resource-row">
+            {crisisResources.resources.map((r) => (
+              <div key={r.name} className="crisis-resource-row">
                 <div>
-                  <div style={{ fontFamily: 'var(--font-head)', fontWeight: 700, fontSize: 14, letterSpacing: '0.02em' }}>{t}</div>
-                  <div className="mono-dim" style={{ fontSize: 10.5 }}>{sub}</div>
+                  <div style={{ fontFamily: 'var(--font-head)', fontWeight: 700, fontSize: 14, letterSpacing: '0.02em' }}>{r.name}</div>
+                  <div className="mono-dim" style={{ fontSize: 10.5 }}>{r.hours}</div>
                 </div>
-                <span className="mono" style={{ color: 'var(--amber)', fontSize: 15 }}>{n}</span>
+                <span className="mono" style={{ color: 'var(--amber)', fontSize: 15 }}>{r.number}</span>
               </div>
             ))}
           </div>
@@ -2892,6 +2903,7 @@ function EscalationScreen({ state, updateState }) {
         <article className={`escalation-option ${activePanel === 'companion' ? 'active' : ''}`}>
           <h3>AI journalling companion</h3>
           <p>Talk it through with a warm, non-judgmental companion. Private to you.</p>
+          <p style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: -6, marginBottom: 4 }}>This is a supportive tool, not a substitute for professional therapy or clinical care.</p>
           <button className="soft-button" onClick={() => setActivePanel(activePanel === 'companion' ? null : 'companion')}>
             {activePanel === 'companion' ? 'Hide' : 'Open companion'}
           </button>
@@ -2968,12 +2980,17 @@ function EscalationScreen({ state, updateState }) {
         </article>
 
         <article className="escalation-option">
-          <h3>SAF counselling</h3>
-          <p>Speak with a SAF counsellor. Confidential and free.</p>
-          <div className="contact-card">
-            <strong>SAF Counselling Hotline</strong>
-            <a href="tel:1800-278-0022">1800-278-0022</a>
-          </div>
+          <h3>SAF counselling &amp; crisis lines</h3>
+          <p>Confidential and free. No commander is notified.</p>
+          {crisisResources.resources.map((r) => (
+            <div key={r.name} className="contact-card">
+              <div>
+                <strong>{r.name}</strong>
+                {r.hours && <div style={{ fontSize: 12, color: 'var(--text-dim)', marginTop: 2 }}>{r.hours}</div>}
+              </div>
+              <a href={`tel:${r.number}`}>{r.number}</a>
+            </div>
+          ))}
         </article>
 
         <article className="escalation-option">
