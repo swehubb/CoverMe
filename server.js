@@ -242,34 +242,45 @@ app.post('/api/moderate', async (req, res) => {
   }
 });
 
-// POST /api/weekend-plan { pesStatus, vocation, ipptGoal, currentScore, currentAward, attempts }
-// -> { summary, days: [{ id, label, duration, workout }] }
-const WEEKEND_PLAN_SYSTEM = `You are a physical training advisor for Singapore National Servicemen. Generate a personalised 2-day weekend IPPT training plan.
+// POST /api/weekend-plan { pesStatus, vocation, ipptGoal, currentScore, currentAward, attempts, swimAttempts }
+// -> { ippt: { summary, days }, swim: { summary, days } }
+const WEEKEND_PLAN_SYSTEM = `You are a physical training advisor for Singapore National Servicemen. Generate a personalised weekend training plan covering two separate goals: IPPT preparation and the NDU 2km sea swim qualification.
 
 Return ONLY valid JSON with no preamble, no markdown, no backticks.
-Schema: { "summary": string, "days": [{ "id": string, "label": string, "duration": string, "workout": string }] }
+Schema:
+{
+  "ippt": { "summary": string, "days": [{ "id": string, "label": string, "duration": string, "workout": string }, { "id": string, "label": string, "duration": string, "workout": string }] },
+  "swim": { "summary": string, "days": [{ "id": string, "label": string, "duration": string, "workout": string }, { "id": string, "label": string, "duration": string, "workout": string }] }
+}
 
 Rules:
-- days must have exactly 2 entries: first has id "sat" and label "Saturday", second has id "sun" and label "Sunday"
-- summary: 1-2 sentences explaining the weekend focus given current standing
+- ippt.days and swim.days must each have exactly 2 entries: first id "sat" label "Saturday", second id "sun" label "Sunday"
+- summary: 1-2 sentences on the weekend focus for that goal
 - duration: e.g. "50 min"
-- workout: specific, practical instructions (2-4 sentences). Name actual exercises, sets, reps. Reference the vocation where appropriate.
-- Tailor intensity to the PES status, vocation physical demands, IPPT goal, and gap between current score and goal
-- Do not prescribe high-impact running for PES C or E
-- Keep language direct and practical, not motivational-poster style`;
+- workout: specific, practical instructions (2-4 sentences). Name actual exercises, sets, reps, distances.
+- IPPT plan: tailor to PES status, IPPT goal, and gap between current score and goal. Do not prescribe high-impact running for PES C or E.
+- Swim plan: focus on open-water swimming endurance, breathwork, and technique for the 2km NDU sea swim. Pass standard is 75 minutes. Include pool sets, breathing drills, or open water simulation depending on current swim time.
+- If no swim attempts are logged, build a base-fitness plan for a complete beginner to the 2km sea swim.
+- Keep language direct and practical, not motivational-poster style.`;
 
 app.post('/api/weekend-plan', async (req, res) => {
-  const { pesStatus, vocation, ipptGoal, currentScore, currentAward, attempts } = req.body || {};
+  const { pesStatus, vocation, ipptGoal, currentScore, currentAward, attempts, swimAttempts } = req.body || {};
+
   const recentAttempts = Array.isArray(attempts) ? attempts.slice(-3) : [];
   const attemptsText = recentAttempts.length
     ? recentAttempts.map((a) => `Score: ${a.score}, Push-ups: ${a.pushups}, Sit-ups: ${a.situps}, Run: ${a.runTime}`).join('; ')
-    : 'No attempts logged yet';
+    : 'No IPPT attempts logged yet';
 
-  const prompt = `PES Status: ${pesStatus || 'A'}\nVocation: ${vocation || 'General'}\nIPPT Goal: ${ipptGoal || 'Pass'}\nCurrent Score: ${currentScore ?? 'No attempts yet'}\nCurrent Award: ${currentAward || 'None'}\nRecent Attempts: ${attemptsText}\n\nGenerate the 2-day weekend training plan.`;
+  const recentSwim = Array.isArray(swimAttempts) ? swimAttempts.slice(-3) : [];
+  const swimText = recentSwim.length
+    ? recentSwim.map((a) => `Time: ${a.time}`).join('; ')
+    : 'No sea swim attempts logged yet';
+
+  const prompt = `PES Status: ${pesStatus || 'A'}\nVocation: ${vocation || 'General'}\nIPPT Goal: ${ipptGoal || 'Pass'}\nCurrent IPPT Score: ${currentScore ?? 'No attempts yet'}\nCurrent Award: ${currentAward || 'None'}\nRecent IPPT Attempts: ${attemptsText}\nRecent 2km Sea Swim Attempts: ${swimText}\n\nGenerate the dual weekend training plan.`;
 
   try {
     const raw = await chatJSON(WEEKEND_PLAN_SYSTEM, prompt);
-    if (!raw?.days?.length) throw new Error('Invalid shape');
+    if (!raw?.ippt?.days?.length || !raw?.swim?.days?.length) throw new Error('Invalid shape');
     return res.json(raw);
   } catch (err) {
     console.error('[weekend-plan] falling back:', err.message);

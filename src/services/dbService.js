@@ -53,6 +53,44 @@ export async function deleteIpptAttempt(dbId) {
   if (error) console.warn('[db] deleteIpptAttempt:', error.message);
 }
 
+// ── SEA SWIM ─────────────────────────────────────────────────────────────────
+
+export async function loadSwimAttempts(supabaseId) {
+  const { data, error } = await supabase
+    .from('swim_attempts')
+    .select('*')
+    .eq('user_id', supabaseId)
+    .order('date', { ascending: true });
+  if (error) { console.warn('[db] loadSwimAttempts:', error.message); return null; }
+  return data.map((row) => ({ date: row.date, timeSeconds: row.time_seconds, _dbId: row.id }));
+}
+
+export async function saveSwimAttempt(supabaseId, attempt) {
+  if (!supabaseId) return null;
+  const { data, error } = await supabase
+    .from('swim_attempts')
+    .insert({ user_id: supabaseId, date: attempt.date, time_seconds: attempt.timeSeconds })
+    .select('id')
+    .single();
+  if (error) { console.warn('[db] saveSwimAttempt:', error.message); return null; }
+  return data?.id ?? null;
+}
+
+export async function updateSwimAttempt(dbId, attempt) {
+  if (!dbId) return;
+  const { error } = await supabase
+    .from('swim_attempts')
+    .update({ date: attempt.date, time_seconds: attempt.timeSeconds })
+    .eq('id', dbId);
+  if (error) console.warn('[db] updateSwimAttempt:', error.message);
+}
+
+export async function deleteSwimAttempt(dbId) {
+  if (!dbId) return;
+  const { error } = await supabase.from('swim_attempts').delete().eq('id', dbId);
+  if (error) console.warn('[db] deleteSwimAttempt:', error.message);
+}
+
 // ── JOURNAL ───────────────────────────────────────────────────────────────────
 
 export async function loadJournalEntries(supabaseId) {
