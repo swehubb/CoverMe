@@ -777,3 +777,17 @@ select.inp { cursor:pointer; appearance:none; background-image:url("data:image/s
   .wk-run-fields { grid-template-columns:1fr 44px; }
   .wk-run-notes { grid-column:1 / -1; }
 }
+
+/* ── Strava integration (orange #FC4C02 is contained to these elements) ────── */
+.feed-tabs { display:flex; gap:8px; margin-bottom:18px; border-bottom:1px solid var(--border); }
+.feed-tab { all:unset; cursor:pointer; font-family:var(--font-head); font-weight:700; font-size:13px; letter-spacing:0.06em; padding:10px 16px; color:var(--text-dim); border-bottom:2px solid transparent; margin-bottom:-1px; transition:color 0.15s, border-color 0.15s; }
+.feed-tab:hover { color:var(--text); }
+.feed-tab.active { color:var(--text); border-bottom-color:var(--accent); }
+.feed-tab.active.strava { color:#FC4C02; border-bottom-color:#FC4C02; }
+.strava-badge { position:absolute; top:14px; right:16px; font-family:var(--font-mono); font-size:9px; font-weight:700; letter-spacing:0.08em; color:#fff; background:#FC4C02; padding:3px 7px; border-radius:4px; }
+.strava-run-pick { all:unset; cursor:pointer; display:block; width:100%; box-sizing:border-box; padding:12px 14px; border:1px solid var(--border); border-radius:6px; transition:border-color 0.15s, background 0.15s; }
+.strava-run-pick:hover { border-color:#FC4C02; background:rgba(252,76,2,0.06); }
+.post-source-toggle { display:flex; gap:6px; background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:4px; }
+.post-source-tab { all:unset; cursor:pointer; flex:1; text-align:center; font-family:var(--font-head); font-weight:700; font-size:12px; letter-spacing:0.05em; padding:9px 10px; border-radius:5px; color:var(--text-dim); transition:all 0.15s; }
+.post-source-tab.active { background:var(--accent-soft); color:var(--accent-text); }
+.post-source-tab.active.strava { background:rgba(252,76,2,0.12); color:#FC4C02; }

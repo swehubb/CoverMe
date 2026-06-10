@@ -259,12 +259,13 @@ Rules:
 - duration: e.g. "50 min"
 - workout: specific, practical instructions (2-4 sentences). Name actual exercises, sets, reps, distances.
 - IPPT plan: tailor to PES status, IPPT goal, and gap between current score and goal. Do not prescribe high-impact running for PES C or E.
-- Swim plan: focus on open-water swimming endurance, breathwork, and technique for the 2km NDU sea swim. Pass standard is 75 minutes. Include pool sets, breathing drills, or open water simulation depending on current swim time.
+- If recent Strava runs are provided, treat them as the user's real-world running volume and fitness signal: calibrate run distances/paces in the IPPT plan to what they are actually running (progress them slightly, don't prescribe far beyond their current pace), and acknowledge their running base in the summary. If no runs are provided, plan from the IPPT attempts alone.
+- Swim plan: focus on open-water swimming endurance, breathwork, and technique for the 2km NDU sea swim. Pass standard is 75 minutes. Include pool sets, breathing drills, or open water simulation depending on current swim time. If recent Strava swims are provided, use their distances and 100m pace as the user's real swim base — calibrate set distances and target paces to what they are actually swimming, and acknowledge it in the swim summary.
 - If no swim attempts are logged, build a base-fitness plan for a complete beginner to the 2km sea swim.
 - Keep language direct and practical, not motivational-poster style.`;
 
 app.post('/api/weekend-plan', async (req, res) => {
-  const { pesStatus, vocation, ipptGoal, currentScore, currentAward, attempts, swimAttempts } = req.body || {};
+  const { pesStatus, vocation, ipptGoal, currentScore, currentAward, attempts, swimAttempts, stravaRuns, stravaSwims } = req.body || {};
 
   const recentAttempts = Array.isArray(attempts) ? attempts.slice(-3) : [];
   const attemptsText = recentAttempts.length
@@ -276,7 +277,17 @@ app.post('/api/weekend-plan', async (req, res) => {
     ? recentSwim.map((a) => `Time: ${a.time}`).join('; ')
     : 'No sea swim attempts logged yet';
 
-  const prompt = `PES Status: ${pesStatus || 'A'}\nVocation: ${vocation || 'General'}\nIPPT Goal: ${ipptGoal || 'Pass'}\nCurrent IPPT Score: ${currentScore ?? 'No attempts yet'}\nCurrent Award: ${currentAward || 'None'}\nRecent IPPT Attempts: ${attemptsText}\nRecent 2km Sea Swim Attempts: ${swimText}\n\nGenerate the dual weekend training plan.`;
+  const recentRuns = Array.isArray(stravaRuns) ? stravaRuns.slice(0, 5) : [];
+  const runsText = recentRuns.length
+    ? recentRuns.map((r) => `${r.distanceKm}km in ${r.time} (${r.pacePerKm}/km)`).join('; ')
+    : 'No Strava runs synced';
+
+  const recentSwims = Array.isArray(stravaSwims) ? stravaSwims.slice(0, 5) : [];
+  const swimsText = recentSwims.length
+    ? recentSwims.map((s) => `${s.distanceKm}km in ${s.time} (${s.pacePer100m}/100m)`).join('; ')
+    : 'No Strava swims synced';
+
+  const prompt = `PES Status: ${pesStatus || 'A'}\nVocation: ${vocation || 'General'}\nIPPT Goal: ${ipptGoal || 'Pass'}\nCurrent IPPT Score: ${currentScore ?? 'No attempts yet'}\nCurrent Award: ${currentAward || 'None'}\nRecent IPPT Attempts: ${attemptsText}\nRecent 2km Sea Swim Attempts: ${swimText}\nRecent Strava runs (real-world running volume): ${runsText}\nRecent Strava swims (real-world swim volume): ${swimsText}\n\nGenerate the dual weekend training plan.`;
 
   try {
     const raw = await chatJSON(WEEKEND_PLAN_SYSTEM, prompt);
@@ -677,6 +688,178 @@ app.post('/api/chat', async (req, res) => {
       matched: false,
     });
   }
+});
+
+// ---------------------------------------------------------------------------
+// Strava integration (proof of concept — runs only)
+// ---------------------------------------------------------------------------
+// Get Strava API credentials at https://www.strava.com/settings/api — set the
+// Authorization Callback Domain to "localhost". Required .env values:
+//   STRAVA_CLIENT_ID, STRAVA_CLIENT_SECRET, STRAVA_REDIRECT_URI
+//
+// Tokens are held in-memory only (not persisted) — they clear on server restart,
+// so for a demo connect once after starting the server and don't restart it.
+let stravaTokens = null; // { access_token, refresh_token, expires_at, athlete: { id, firstname, lastname } }
+
+const STRAVA_REDIRECT_URI = process.env.STRAVA_REDIRECT_URI || 'http://localhost:3001/api/strava/callback';
+const STRAVA_FRONTEND_URL = process.env.STRAVA_FRONTEND_URL || 'http://localhost:5173';
+
+// Seconds → "M:SS" pace string (per km for runs, per 100m for swims).
+function formatStravaPace(secPerUnit) {
+  if (!Number.isFinite(secPerUnit) || secPerUnit <= 0) return '—';
+  const m = Math.floor(secPerUnit / 60);
+  const s = Math.round(secPerUnit % 60);
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+// Map a raw Strava activity to the lean run shape the frontend consumes.
+function mapStravaRun(a) {
+  const distanceKm = (a.distance || 0) / 1000;
+  const movingTime = a.moving_time || 0;
+  const paceSec = distanceKm > 0 ? movingTime / distanceKm : 0;
+  return {
+    type: 'run',
+    stravaId: a.id,
+    name: a.name,
+    date: a.start_date,
+    distanceKm: distanceKm.toFixed(2),
+    durationSeconds: movingTime,
+    pacePerKm: formatStravaPace(paceSec),
+    elevationGain: a.total_elevation_gain,
+    isRace: a.workout_type === 1,
+  };
+}
+
+// Map a raw Strava swim. Swim pace is conventionally per 100m, not per km.
+function mapStravaSwim(a) {
+  const distanceMetres = a.distance || 0;
+  const movingTime = a.moving_time || 0;
+  const pacePer100 = distanceMetres > 0 ? (movingTime / distanceMetres) * 100 : 0;
+  return {
+    type: 'swim',
+    stravaId: a.id,
+    name: a.name,
+    date: a.start_date,
+    distanceKm: (distanceMetres / 1000).toFixed(2),
+    distanceMetres: Math.round(distanceMetres),
+    durationSeconds: movingTime,
+    pacePer100m: formatStravaPace(pacePer100),
+    isRace: a.workout_type === 1,
+  };
+}
+
+// Returns a valid access token, refreshing it first if it has (nearly) expired.
+// Throws if no token is stored or the refresh call fails.
+async function ensureFreshStravaToken() {
+  if (!stravaTokens) throw new Error('not_connected');
+  const now = Math.floor(Date.now() / 1000);
+  if (stravaTokens.expires_at && stravaTokens.expires_at > now + 60) {
+    return stravaTokens.access_token;
+  }
+  const resp = await fetch('https://www.strava.com/oauth/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      client_id: process.env.STRAVA_CLIENT_ID,
+      client_secret: process.env.STRAVA_CLIENT_SECRET,
+      refresh_token: stravaTokens.refresh_token,
+      grant_type: 'refresh_token',
+    }),
+  });
+  if (!resp.ok) throw new Error(`refresh responded ${resp.status}`);
+  const data = await resp.json();
+  stravaTokens = {
+    ...stravaTokens,
+    access_token: data.access_token,
+    refresh_token: data.refresh_token || stravaTokens.refresh_token,
+    expires_at: data.expires_at,
+  };
+  return stravaTokens.access_token;
+}
+
+// GET /api/strava/auth -> { url } (frontend performs the redirect)
+app.get('/api/strava/auth', (req, res) => {
+  const clientId = process.env.STRAVA_CLIENT_ID || '';
+  const url =
+    `https://www.strava.com/oauth/authorize?client_id=${clientId}` +
+    `&redirect_uri=${encodeURIComponent(STRAVA_REDIRECT_URI)}` +
+    `&response_type=code&scope=activity:read_all`;
+  res.json({ url });
+});
+
+// GET /api/strava/callback?code=... -> exchanges code, stores tokens, redirects to frontend
+app.get('/api/strava/callback', async (req, res) => {
+  const code = req.query?.code;
+  if (!code) return res.redirect(`${STRAVA_FRONTEND_URL}/serve/strava-error`);
+  try {
+    const resp = await fetch('https://www.strava.com/oauth/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        client_id: process.env.STRAVA_CLIENT_ID,
+        client_secret: process.env.STRAVA_CLIENT_SECRET,
+        code,
+        grant_type: 'authorization_code',
+      }),
+    });
+    if (!resp.ok) throw new Error(`token exchange responded ${resp.status}`);
+    const data = await resp.json();
+    stravaTokens = {
+      access_token: data.access_token,
+      refresh_token: data.refresh_token,
+      expires_at: data.expires_at,
+      athlete: data.athlete
+        ? { id: data.athlete.id, firstname: data.athlete.firstname, lastname: data.athlete.lastname }
+        : null,
+    };
+    return res.redirect(`${STRAVA_FRONTEND_URL}/serve/strava-connected`);
+  } catch (err) {
+    console.error('[strava/callback] error:', err.message);
+    return res.redirect(`${STRAVA_FRONTEND_URL}/serve/strava-error`);
+  }
+});
+
+// POST /api/strava/refresh -> { access_token } (refreshes only if expired)
+app.post('/api/strava/refresh', async (req, res) => {
+  if (!stravaTokens) return res.status(400).json({ error: 'not_connected' });
+  try {
+    const access_token = await ensureFreshStravaToken();
+    return res.json({ access_token });
+  } catch (err) {
+    console.error('[strava/refresh] error:', err.message);
+    return res.status(500).json({ error: 'refresh_failed' });
+  }
+});
+
+// GET /api/strava/activities -> { activities, swims, athlete } | { error, activities: [], swims: [] }
+// activities = runs (kept under this key for backward compatibility); swims is separate.
+app.get('/api/strava/activities', async (req, res) => {
+  if (!stravaTokens) return res.json({ error: 'not_connected', activities: [], swims: [] });
+  try {
+    const accessToken = await ensureFreshStravaToken();
+    // per_page=100 so swims aren't crowded out of the window by frequent runs.
+    const resp = await fetch('https://www.strava.com/api/v3/athlete/activities?per_page=100', {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!resp.ok) throw new Error(`activities responded ${resp.status}`);
+    const list = await resp.json();
+    const data = Array.isArray(list) ? list : [];
+    const activities = data
+      .filter((a) => a.type === 'Run' || a.sport_type === 'Run')
+      .map(mapStravaRun);
+    const swims = data
+      .filter((a) => a.type === 'Swim' || a.sport_type === 'Swim')
+      .map(mapStravaSwim);
+    return res.json({ activities, swims, athlete: stravaTokens.athlete });
+  } catch (err) {
+    console.error('[strava/activities] error:', err.message);
+    return res.status(500).json({ error: 'fetch_failed', activities: [], swims: [] });
+  }
+});
+
+// GET /api/strava/status -> { connected, athlete }
+app.get('/api/strava/status', (req, res) => {
+  res.json({ connected: Boolean(stravaTokens), athlete: stravaTokens?.athlete || null });
 });
 
 // Error-handling middleware — never leaks internals or the API key.

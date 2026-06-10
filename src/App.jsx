@@ -31,6 +31,7 @@ import { peerWallPosts, wallPhases } from './data/mockPeerWall';
 import { platoonMembers, peerSupportLead } from './data/mockPlatoon';
 import { demoIpptAttemptsByAccount } from './data/mockAccounts';
 import nlpService from './services/nlpService';
+import stravaService from './services/stravaService';
 import * as dbService from './services/dbService';
 import { notify, crisisResources } from './services/mockNotification';
 import {
@@ -48,6 +49,7 @@ import PreEnlistmentWorkout from './pages/PreEnlistmentWorkout';
 import WorkoutSession from './pages/WorkoutSession';
 import AiChatPage from './pages/AiChatPage';
 import PeerIntelPage from './pages/PeerIntelPage';
+import StravaConnect from './components/serve/StravaConnect';
 
 ChartJS.register(CategoryScale, LinearScale, LineElement, PointElement, Tooltip, Filler);
 
@@ -140,6 +142,13 @@ const defaultState = {
     logs: [],
     intake: null,
     plan: null,
+  },
+  strava: {
+    connected: false,
+    athlete: null, // { firstname, lastname }
+    activities: [], // synced run activities
+    swims: [], // synced swim activities
+    lastSynced: null, // ISO timestamp of last successful sync
   },
   ui: {
     activeModule: '',
@@ -264,6 +273,7 @@ function loadState() {
       support: { ...defaultState.support, ...parsed.support },
       social: { ...defaultState.social, ...parsed.social },
       workout: { ...defaultState.workout, ...parsed.workout },
+      strava: { ...defaultState.strava, ...parsed.strava },
       ui: { ...defaultState.ui, ...parsed.ui },
     };
   } catch {
@@ -397,6 +407,27 @@ function AppShell({ state, updateState }) {
     navigate('/login');
   };
 
+  // Strava: write synced runs + swims + athlete into state in one call.
+  const setStravaData = (activities, athlete, swims) =>
+    updateState((current) => ({
+      ...current,
+      strava: {
+        ...current.strava,
+        connected: true,
+        activities: Array.isArray(activities) ? activities : [],
+        swims: Array.isArray(swims) ? swims : (current.strava?.swims || []),
+        athlete: athlete || current.strava?.athlete || null,
+        lastSynced: new Date().toISOString(),
+      },
+    }));
+
+  // Strava: local-only disconnect for the demo (no backend revoke needed).
+  const clearStravaData = () =>
+    updateState((current) => ({
+      ...current,
+      strava: { connected: false, athlete: null, activities: [], swims: [], lastSynced: null },
+    }));
+
   return (
     <div className="app-shell" data-branch={branch}>
       <CommandRail
@@ -441,7 +472,10 @@ function AppShell({ state, updateState }) {
               element={<TrainScreen state={state} updateState={updateState} activeModule={activeModule} />}
             />
             <Route path="/weekend-planner" element={<WeekendPlannerScreen state={state} updateState={updateState} activeModule={activeModule} />} />
-            <Route path="/training-feed" element={<TrainingFeedScreen state={state} updateState={updateState} />} />
+            <Route path="/training-feed" element={<TrainingFeedScreen state={state} updateState={updateState} setStravaData={setStravaData} />} />
+            <Route path="/serve/strava-connect" element={<StravaConnect state={state} setStravaData={setStravaData} clearStravaData={clearStravaData} />} />
+            <Route path="/serve/strava-connected" element={<StravaConnect state={state} setStravaData={setStravaData} clearStravaData={clearStravaData} />} />
+            <Route path="/serve/strava-error" element={<StravaConnect state={state} setStravaData={setStravaData} clearStravaData={clearStravaData} />} />
             <Route
               path="/profile"
               element={
@@ -536,6 +570,11 @@ function HomeDashboard({ state, phase, activeModule }) {
               title: 'Support Options',
               body: 'User-controlled escalation: AI companion, peer support leader, or SAF counselling. You decide, every time.',
               to: '/escalation',
+            },
+            {
+              title: 'Connect Strava',
+              body: 'Sync your runs automatically. Your 2.4km times feed your IPPT tracker and appear in the training feed.',
+              to: '/serve/strava-connect',
             },
           ],
         };
@@ -1230,11 +1269,24 @@ function todayIso() {
 
 const BLANK_FORM = () => ({ pushups: '', situps: '', runMins: '', runSecs: '', date: todayIso() });
 
-function AttemptForm({ form, setForm }) {
+function AttemptForm({ form, setForm, stravaActivities = [], stravaConnected = false, onConnectStrava }) {
   const dateRef = useRef(null);
+  const [showStravaImport, setShowStravaImport] = useState(false);
   const clampSecs = (v) => String(Math.min(59, Math.max(0, parseInt(v) || 0))).padStart(2, '0');
 
+  // Only runs close to 2.4km are relevant; show the 10 most recent.
+  const importableRuns = (stravaActivities || [])
+    .filter((run) => parseFloat(run.distanceKm) >= 2.2)
+    .slice(0, 10);
+
+  const importRun = (run) => {
+    const secs = Number(run.durationSeconds) || 0;
+    setForm({ ...form, runMins: String(Math.floor(secs / 60)), runSecs: String(secs % 60).padStart(2, '0') });
+    setShowStravaImport(false);
+  };
+
   return (
+    <>
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '18px 20px' }}>
       {[
         { label: 'PUSH-UPS', field: 'pushups', type: 'number', min: 0 },
@@ -1273,6 +1325,34 @@ function AttemptForm({ form, setForm }) {
           />
         </div>
         <div className="mono-dim" style={{ fontSize: 9, marginTop: 4 }}>MM : SS</div>
+        {onConnectStrava && (
+          stravaConnected ? (
+            <button
+              type="button"
+              onClick={() => setShowStravaImport(true)}
+              style={{
+                marginTop: 8, display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer',
+                background: 'transparent', border: '1px solid #FC4C02', color: '#FC4C02',
+                borderRadius: 5, padding: '5px 10px', fontFamily: 'var(--font-mono)', fontSize: 11, letterSpacing: '0.04em',
+              }}
+            >
+              ⬇ IMPORT FROM STRAVA
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={onConnectStrava}
+              title="Connect Strava to import your runs"
+              style={{
+                marginTop: 8, display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer',
+                background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-faint)',
+                borderRadius: 5, padding: '5px 10px', fontFamily: 'var(--font-mono)', fontSize: 11, letterSpacing: '0.04em',
+              }}
+            >
+              CONNECT STRAVA FIRST
+            </button>
+          )
+        )}
       </div>
       <div>
         <div className="label" style={{ fontSize: 10, marginBottom: 6 }}>DATE</div>
@@ -1299,6 +1379,34 @@ function AttemptForm({ form, setForm }) {
         </div>
       </div>
     </div>
+
+    {showStravaImport && (
+      <Modal title="Import from Strava" onClose={() => setShowStravaImport(false)}>
+        {importableRuns.length === 0 ? (
+          <div className="empty-state">No 2.4km runs found in your Strava history</div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <p className="mono-dim" style={{ fontSize: 11, margin: '0 0 4px' }}>
+              Tap a run to use its time for the 2.4km station.
+            </p>
+            {importableRuns.map((run) => (
+              <button key={run.stravaId} type="button" className="strava-run-pick" onClick={() => importRun(run)}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline' }}>
+                  <span className="mono" style={{ fontSize: 13 }}>{run.name}</span>
+                  <span style={{ fontFamily: 'var(--font-head)', fontWeight: 800, color: '#FC4C02' }}>
+                    {stravaService.formatDuration(run.durationSeconds)}
+                  </span>
+                </div>
+                <div className="mono-dim" style={{ fontSize: 11, marginTop: 4 }}>
+                  {stravaService.formatRunDate(run.date)} · {run.distanceKm} km · {run.pacePerKm} /km
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+      </Modal>
+    )}
+    </>
   );
 }
 
@@ -1306,10 +1414,24 @@ const SWIM_PASS_SECONDS = 50 * 60; // NDU 2km sea swim pass standard: 50 minutes
 
 const BLANK_SWIM_FORM = () => ({ swimMins: '', swimSecs: '', date: todayIso() });
 
-function SwimAttemptForm({ form, setForm }) {
+function SwimAttemptForm({ form, setForm, stravaSwims = [], stravaConnected = false, onConnectStrava }) {
   const dateRef = useRef(null);
+  const [showStravaImport, setShowStravaImport] = useState(false);
   const clampSecs = (v) => String(Math.min(59, Math.max(0, parseInt(v) || 0))).padStart(2, '0');
+
+  // Real swim sessions only (≥1km), 10 most recent.
+  const importableSwims = (stravaSwims || [])
+    .filter((s) => parseFloat(s.distanceKm) >= 1.0)
+    .slice(0, 10);
+
+  const importSwim = (swim) => {
+    const secs = Number(swim.durationSeconds) || 0;
+    setForm({ ...form, swimMins: String(Math.floor(secs / 60)), swimSecs: String(secs % 60).padStart(2, '0') });
+    setShowStravaImport(false);
+  };
+
   return (
+    <>
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
       <div>
         <div className="label" style={{ fontSize: 10, marginBottom: 6 }}>2KM SEA SWIM TIME</div>
@@ -1330,6 +1452,34 @@ function SwimAttemptForm({ form, setForm }) {
           />
         </div>
         <div className="mono-dim" style={{ fontSize: 9, marginTop: 4 }}>MM : SS (max 120 min)</div>
+        {onConnectStrava && (
+          stravaConnected ? (
+            <button
+              type="button"
+              onClick={() => setShowStravaImport(true)}
+              style={{
+                marginTop: 8, display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer',
+                background: 'transparent', border: '1px solid #FC4C02', color: '#FC4C02',
+                borderRadius: 5, padding: '5px 10px', fontFamily: 'var(--font-mono)', fontSize: 11, letterSpacing: '0.04em',
+              }}
+            >
+              ⬇ IMPORT FROM STRAVA
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={onConnectStrava}
+              title="Connect Strava to import your swims"
+              style={{
+                marginTop: 8, display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer',
+                background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-faint)',
+                borderRadius: 5, padding: '5px 10px', fontFamily: 'var(--font-mono)', fontSize: 11, letterSpacing: '0.04em',
+              }}
+            >
+              CONNECT STRAVA FIRST
+            </button>
+          )
+        )}
       </div>
       <div>
         <div className="label" style={{ fontSize: 10, marginBottom: 6 }}>DATE</div>
@@ -1348,6 +1498,34 @@ function SwimAttemptForm({ form, setForm }) {
         </div>
       </div>
     </div>
+
+    {showStravaImport && (
+      <Modal title="Import Swim from Strava" onClose={() => setShowStravaImport(false)}>
+        {importableSwims.length === 0 ? (
+          <div className="empty-state">No swims found in your Strava history</div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <p className="mono-dim" style={{ fontSize: 11, margin: '0 0 4px' }}>
+              Tap a swim to use its time for your 2km sea swim.
+            </p>
+            {importableSwims.map((swim) => (
+              <button key={swim.stravaId} type="button" className="strava-run-pick" onClick={() => importSwim(swim)}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline' }}>
+                  <span className="mono" style={{ fontSize: 13 }}>{swim.name}</span>
+                  <span style={{ fontFamily: 'var(--font-head)', fontWeight: 800, color: '#FC4C02' }}>
+                    {stravaService.formatDuration(swim.durationSeconds)}
+                  </span>
+                </div>
+                <div className="mono-dim" style={{ fontSize: 11, marginTop: 4 }}>
+                  {stravaService.formatRunDate(swim.date)} · {swim.distanceKm} km · {swim.pacePer100m} /100m
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+      </Modal>
+    )}
+    </>
   );
 }
 
@@ -1831,7 +2009,13 @@ function TrainScreen({ state, updateState }) {
       {/* LOG SWIM MODAL */}
       {showSwimModal && (
         <Modal title="Log 2km Sea Swim" onClose={() => setShowSwimModal(false)}>
-          <SwimAttemptForm form={swimForm} setForm={setSwimForm} />
+          <SwimAttemptForm
+            form={swimForm}
+            setForm={setSwimForm}
+            stravaSwims={state.strava?.swims || []}
+            stravaConnected={state.strava?.connected || false}
+            onConnectStrava={() => { setShowSwimModal(false); navigate('/serve/strava-connect'); }}
+          />
           <button className="primary-button" style={{ marginTop: 20, width: '100%' }} onClick={submitSwimAttempt}>
             SAVE ATTEMPT
           </button>
@@ -1841,7 +2025,13 @@ function TrainScreen({ state, updateState }) {
       {/* EDIT SWIM MODAL */}
       {swimEditIdx !== null && swimEditForm && (
         <Modal title="Edit Sea Swim Attempt" onClose={() => { setSwimEditIdx(null); setSwimEditForm(null); }}>
-          <SwimAttemptForm form={swimEditForm} setForm={setSwimEditForm} />
+          <SwimAttemptForm
+            form={swimEditForm}
+            setForm={setSwimEditForm}
+            stravaSwims={state.strava?.swims || []}
+            stravaConnected={state.strava?.connected || false}
+            onConnectStrava={() => { setSwimEditIdx(null); setSwimEditForm(null); navigate('/serve/strava-connect'); }}
+          />
           <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
             <button className="primary-button" style={{ flex: 1 }} onClick={saveSwimEdit}>SAVE CHANGES</button>
             <button
@@ -1855,7 +2045,13 @@ function TrainScreen({ state, updateState }) {
       {/* LOG ATTEMPT MODAL */}
       {showModal && (
         <Modal title="Log IPPT Attempt" onClose={() => setShowModal(false)}>
-          <AttemptForm form={form} setForm={setForm} />
+          <AttemptForm
+            form={form}
+            setForm={setForm}
+            stravaActivities={state.strava?.activities || []}
+            stravaConnected={state.strava?.connected || false}
+            onConnectStrava={() => { setShowModal(false); navigate('/serve/strava-connect'); }}
+          />
           <button className="primary-button" style={{ marginTop: 20, width: '100%' }} onClick={submitAttempt}>
             SAVE ATTEMPT
           </button>
@@ -1865,7 +2061,13 @@ function TrainScreen({ state, updateState }) {
       {/* EDIT ATTEMPT MODAL */}
       {editIdx !== null && editForm && (
         <Modal title="Edit Attempt" onClose={() => { setEditIdx(null); setEditForm(null); }}>
-          <AttemptForm form={editForm} setForm={setEditForm} />
+          <AttemptForm
+            form={editForm}
+            setForm={setEditForm}
+            stravaActivities={state.strava?.activities || []}
+            stravaConnected={state.strava?.connected || false}
+            onConnectStrava={() => { setEditIdx(null); setEditForm(null); navigate('/serve/strava-connect'); }}
+          />
           <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
             <button className="primary-button" style={{ flex: 1 }} onClick={saveEdit}>SAVE CHANGES</button>
             <button
@@ -1986,6 +2188,15 @@ function FeedPostCard({ post, onReact, onAddReply, onDelete, isOwn }) {
         </div>
       </div>
 
+      {/* Strava attribution badge */}
+      {post.source === 'strava' && (
+        <div style={{ marginBottom: 10 }}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', color: '#fff', background: '#FC4C02', padding: '3px 8px', borderRadius: 4 }}>
+            ▲ STRAVA {post.activityType === 'swim' ? 'SWIM' : 'RUN'}
+          </span>
+        </div>
+      )}
+
       {/* Chips */}
       {post.chips?.length > 0 && (
         <div className="badge-row" style={{ marginBottom: 10 }}>
@@ -2078,8 +2289,14 @@ function FeedPostCard({ post, onReact, onAddReply, onDelete, isOwn }) {
   );
 }
 
-function ComposePostModal({ profile, attempts, onClose, onSubmit, initialAttemptIdx }) {
+function ComposePostModal({ profile, attempts, stravaActivities = [], stravaSwims = [], onClose, onSubmit, initialAttemptIdx }) {
+  // Runs + swims as one selectable list, most recent first.
+  const stravaItems = [...stravaActivities, ...stravaSwims].sort((a, b) => new Date(b.date) - new Date(a.date));
+  const hasStrava = stravaItems.length > 0;
+  // Default to whichever source the user actually has data for.
+  const [source, setSource]             = useState(attempts.length === 0 && hasStrava ? 'strava' : 'ippt');
   const [selectedIdx, setSelectedIdx]   = useState(initialAttemptIdx ?? (attempts.length > 0 ? attempts.length - 1 : null));
+  const [stravaIdx, setStravaIdx]       = useState(0);
   const [exercises, setExercises]       = useState({ pushups: true, situps: true, run: true });
   const [title, setTitle]               = useState('');
   const [body, setBody]                 = useState('');
@@ -2088,6 +2305,7 @@ function ComposePostModal({ profile, attempts, onClose, onSubmit, initialAttempt
 
   const attempt = selectedIdx !== null ? attempts[selectedIdx] : null;
   const sc = attempt ? calculateIpptScore(attempt.pushups, attempt.situps, attempt.runSeconds) : null;
+  const stravaItem = source === 'strava' ? stravaItems[stravaIdx] : null;
 
   const toggleEx = (k) => setExercises((prev) => ({ ...prev, [k]: !prev[k] }));
 
@@ -2101,6 +2319,40 @@ function ComposePostModal({ profile, attempts, onClose, onSubmit, initialAttempt
   };
 
   const buildPost = () => {
+    const base = {
+      id: `user-${Date.now()}`,
+      name: profile.fullName,
+      unit: profile.unit || 'Unit',
+      recency: 'Just now',
+      photos,
+      reactions: { cheer: 0, fire: 0, respect: 0 },
+      userReaction: '',
+      comments: [],
+      isUserPost: true,
+    };
+    const feelingLine = feeling ? `Feeling: ${feeling}` : '';
+
+    // Strava run/swim post — headline is the time; stats come from the activity.
+    if (source === 'strava' && stravaItem) {
+      const isSwim = stravaItem.type === 'swim';
+      const paceStr = isSwim ? `${stravaItem.pacePer100m} /100m` : `${stravaItem.pacePerKm} /km`;
+      const chips = [isSwim ? 'Swim' : 'Run', `${stravaItem.distanceKm} km`, paceStr];
+      if (stravaItem.isRace) chips.push('Race');
+      if (feeling) chips.push(feeling);
+      const statsLine = `Distance: ${stravaItem.distanceKm} km · Time: ${stravaService.formatDuration(stravaItem.durationSeconds)} · Pace: ${paceStr}`;
+      return {
+        ...base,
+        title: title.trim() || stravaItem.name,
+        headline: title.trim() || stravaItem.name,
+        statline: stravaService.formatDuration(stravaItem.durationSeconds),
+        detail: [statsLine, feelingLine, body.trim()].filter(Boolean).join('\n\n'),
+        chips,
+        source: 'strava',
+        activityType: isSwim ? 'swim' : 'run',
+      };
+    }
+
+    // IPPT attempt post (original behaviour).
     const statLines = [];
     const chips = [];
     if (attempt) {
@@ -2110,36 +2362,55 @@ function ComposePostModal({ profile, attempts, onClose, onSubmit, initialAttempt
       if (sc) chips.push(sc.award);
     }
     if (feeling) chips.push(feeling);
-    const statsLine = statLines.join(' · ');
-    const feelingLine = feeling ? `Feeling: ${feeling}` : '';
-    const detail = [statsLine, feelingLine, body.trim()].filter(Boolean).join('\n\n');
-
     return {
-      id: `user-${Date.now()}`,
-      name: profile.fullName,
-      unit: profile.unit || 'Unit',
-      recency: 'Just now',
+      ...base,
       title: title.trim(),
       headline: title.trim() || 'Activity',
       statline: sc ? `${sc.score} pts` : '',
-      detail,
+      detail: [statLines.join(' · '), feelingLine, body.trim()].filter(Boolean).join('\n\n'),
       chips,
-      photos,
-      reactions: { cheer: 0, fire: 0, respect: 0 },
-      userReaction: '',
-      comments: [],
-      isUserPost: true,
     };
   };
 
-  const canSubmit = title.trim() || body.trim();
+  const canSubmit = source === 'strava' ? Boolean(stravaItem) : (title.trim() || body.trim());
 
   return (
     <Modal title="Post Activity" onClose={onClose}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
 
-        {/* Attempt selector */}
-        {attempts.length > 0 ? (
+        {/* Source toggle — only when the user has Strava runs to choose from */}
+        {hasStrava && (
+          <div className="post-source-toggle">
+            <button type="button" className={`post-source-tab${source === 'ippt' ? ' active' : ''}`} onClick={() => setSource('ippt')}>
+              IPPT ATTEMPT
+            </button>
+            <button type="button" className={`post-source-tab${source === 'strava' ? ' active strava' : ''}`} onClick={() => setSource('strava')}>
+              STRAVA
+            </button>
+          </div>
+        )}
+
+        {/* Activity selector */}
+        {source === 'strava' ? (
+          <div>
+            <div className="label" style={{ fontSize: 10, marginBottom: 8 }}>SELECT ACTIVITY</div>
+            <select value={stravaIdx} onChange={(e) => setStravaIdx(Number(e.target.value))} style={{ width: '100%' }}>
+              {stravaItems.map((it, i) => (
+                <option key={`${it.type}-${it.stravaId}`} value={i}>
+                  {it.type === 'swim' ? '🏊' : '🏃'} {stravaService.formatRunDate(it.date)} — {it.name} ({it.distanceKm} km)
+                </option>
+              ))}
+            </select>
+            {stravaItem && (
+              <div className="badge-row" style={{ marginTop: 12 }}>
+                <span className="info-badge">{stravaItem.distanceKm} km</span>
+                <span className="info-badge">{stravaService.formatDuration(stravaItem.durationSeconds)}</span>
+                <span className="info-badge">{stravaItem.type === 'swim' ? `${stravaItem.pacePer100m} /100m` : `${stravaItem.pacePerKm} /km`}</span>
+                {stravaItem.isRace && <span className="info-badge">Race</span>}
+              </div>
+            )}
+          </div>
+        ) : attempts.length > 0 ? (
           <div>
             <div className="label" style={{ fontSize: 10, marginBottom: 8 }}>SELECT ATTEMPT</div>
             <select
@@ -2260,16 +2531,97 @@ function ComposePostModal({ profile, attempts, onClose, onSubmit, initialAttempt
   );
 }
 
-function TrainingFeedScreen({ state, updateState }) {
+// Strava activity view inside the training feed. Read-only; pulls from app state.
+// Shows runs and swims merged, most recent first.
+function StravaFeed({ connected, activities, swims = [], onConnect }) {
+  if (!connected) {
+    return (
+      <Panel ticks style={{ padding: 32, textAlign: 'center' }}>
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
+          <svg width="44" height="44" viewBox="0 0 24 24" fill="#FC4C02" aria-hidden="true">
+            <path d="M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066m-7.008-5.599l2.836 5.598h4.172L10.463 0l-7 13.828h4.169" />
+          </svg>
+        </div>
+        <h3 className="h-title" style={{ fontSize: 18, marginBottom: 8 }}>Connect Strava to see your runs here</h3>
+        <p className="mono-dim" style={{ fontSize: 12.5, marginBottom: 18 }}>
+          Your synced runs and swims will appear alongside platoon activity.
+        </p>
+        <button className="btn" style={{ background: '#FC4C02', borderColor: '#FC4C02' }} onClick={onConnect}>
+          CONNECT WITH STRAVA
+        </button>
+      </Panel>
+    );
+  }
+
+  const merged = [...activities, ...swims].sort((a, b) => new Date(b.date) - new Date(a.date));
+
+  if (!merged.length) {
+    return (
+      <div className="mono-dim" style={{ textAlign: 'center', padding: '48px 0' }}>
+        No runs or swims found. Go train and sync again.
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {merged.map((act) => {
+        const isSwim = act.type === 'swim';
+        return (
+          <Panel key={`${act.type}-${act.stravaId}`} style={{ padding: '16px 20px', position: 'relative' }}>
+            <span className="strava-badge">{isSwim ? '🏊 STRAVA' : '🏃 STRAVA'}</span>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12, marginBottom: 8, paddingRight: 86 }}>
+              <span className="h-title" style={{ fontSize: 16 }}>{act.name}</span>
+              <span className="mono-dim" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>{stravaService.formatRunDate(act.date)}</span>
+            </div>
+            <div style={{ display: 'flex', gap: 22, flexWrap: 'wrap' }}>
+              <StravaStat label="DISTANCE" value={`${act.distanceKm} km`} />
+              <StravaStat label="DURATION" value={stravaService.formatDuration(act.durationSeconds)} />
+              {isSwim
+                ? <StravaStat label="PACE" value={`${act.pacePer100m} /100m`} />
+                : <StravaStat label="PACE" value={`${act.pacePerKm} /km`} />}
+              {act.isRace && <StravaStat label="TYPE" value="RACE" />}
+            </div>
+          </Panel>
+        );
+      })}
+    </div>
+  );
+}
+
+function StravaStat({ label, value }) {
+  return (
+    <div>
+      <div className="label" style={{ fontSize: 9, marginBottom: 3 }}>{label}</div>
+      <div style={{ fontFamily: 'var(--font-mono)', fontSize: 16, color: '#FC4C02', fontVariantNumeric: 'tabular-nums' }}>{value}</div>
+    </div>
+  );
+}
+
+function TrainingFeedScreen({ state, updateState, setStravaData }) {
   const profile   = state.auth.profile;
   const { user: authUser } = useAuth();
   const supabaseId = authUser?.supabaseId || profile?.supabaseId;
   const myPostIds  = useRef(new Set());
   const location  = useLocation();
+  const navigate  = useNavigate();
   const [showCompose, setShowCompose] = useState(location.state?.autoCompose ?? false);
   const [autoAttemptIdx] = useState(location.state?.attemptIdx ?? null);
+  const [feedTab, setFeedTab] = useState('platoon'); // 'platoon' | 'strava'
+  const [syncing, setSyncing] = useState(false);
 
   const posts = state.social?.trainingFeedPosts ?? [];
+  const stravaConnected = state.strava?.connected || false;
+  const stravaActivities = state.strava?.activities || [];
+  const stravaSwims = state.strava?.swims || [];
+
+  const syncStrava = async () => {
+    setSyncing(true);
+    const { activities, swims, athlete, error } = await stravaService.getActivities();
+    setSyncing(false);
+    if (error) return; // keep existing data; safe no-op on failure
+    setStravaData?.(activities, athlete, swims);
+  };
 
   const react = (postId, key) => {
     updateState((c) => ({
@@ -2330,35 +2682,75 @@ function TrainingFeedScreen({ state, updateState }) {
   return (
     <div style={{ height: '100%', overflow: 'auto', padding: '28px 36px' }}>
       <span className="label" style={{ color: 'var(--accent-text)', marginBottom: 8, display: 'block' }}>▲ SERVE · TRAINING FEED</span>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 24 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 20 }}>
         <h1 className="h-display" style={{ fontSize: 52, margin: 0 }}>TRAINING FEED</h1>
-        <button className="btn" style={{ padding: '10px 20px' }} onClick={() => setShowCompose(true)}>
-          + POST ACTIVITY
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          {feedTab === 'strava' && stravaConnected && (
+            <button
+              className="btn ghost sm"
+              onClick={syncStrava}
+              disabled={syncing}
+              style={{ borderColor: '#FC4C02', color: '#FC4C02' }}
+              title="Re-sync your Strava runs"
+            >
+              {syncing ? 'SYNCING…' : '⟳ SYNC'}
+            </button>
+          )}
+          <button className="btn" style={{ padding: '10px 20px' }} onClick={() => setShowCompose(true)}>
+            + POST ACTIVITY
+          </button>
+        </div>
+      </div>
+
+      {/* Feed source tabs */}
+      <div className="feed-tabs">
+        <button
+          className={`feed-tab${feedTab === 'platoon' ? ' active' : ''}`}
+          onClick={() => setFeedTab('platoon')}
+        >
+          PLATOON
+        </button>
+        <button
+          className={`feed-tab${feedTab === 'strava' ? ' active strava' : ''}`}
+          onClick={() => setFeedTab('strava')}
+        >
+          STRAVA
         </button>
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-        {posts.length === 0 && (
-          <div className="mono-dim" style={{ textAlign: 'center', padding: '48px 0' }}>
-            No activity posted yet. Be the first.
-          </div>
-        )}
-        {posts.map((post) => (
-          <FeedPostCard
-            key={post.id}
-            post={post}
-            onReact={react}
-            onAddReply={addReply}
-            isOwn={isMyPost(post)}
-            onDelete={deletePost}
-          />
-        ))}
-      </div>
+      {feedTab === 'platoon' ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {posts.length === 0 && (
+            <div className="mono-dim" style={{ textAlign: 'center', padding: '48px 0' }}>
+              No activity posted yet. Be the first.
+            </div>
+          )}
+          {posts.map((post) => (
+            <FeedPostCard
+              key={post.id}
+              post={post}
+              onReact={react}
+              onAddReply={addReply}
+              isOwn={isMyPost(post)}
+              onDelete={deletePost}
+            />
+          ))}
+        </div>
+      ) : (
+        <StravaFeed
+          connected={stravaConnected}
+          activities={stravaActivities}
+          swims={stravaSwims}
+          onConnect={() => navigate('/serve/strava-connect')}
+        />
+      )}
 
       {showCompose && (
         <ComposePostModal
           profile={profile}
           attempts={state.ippt.attempts}
+          stravaActivities={state.strava?.activities || []}
+          stravaSwims={state.strava?.swims || []}
           initialAttemptIdx={autoAttemptIdx}
           onClose={() => setShowCompose(false)}
           onSubmit={publishPost}
@@ -2373,10 +2765,16 @@ function WeekendPlannerScreen({ state, updateState, activeModule }) {
   const profile = state.auth.profile;
   const ipptAttempts = state.ippt.attempts;
   const swimAttempts = state.swim?.attempts || [];
+  const stravaRuns = state.strava?.activities || [];
+  const stravaSwimRuns = state.strava?.swims || [];
 
   const lastIpptDate = ipptAttempts.length ? ipptAttempts[ipptAttempts.length - 1].date : 'none';
   const lastSwimDate = swimAttempts.length ? swimAttempts[swimAttempts.length - 1].date : 'none';
-  const cacheKey = `${lastIpptDate}|${lastSwimDate}`;
+  // Most recent run/swim id + counts fold Strava into the cache key, so a fresh
+  // sync recalibrates the plan (and it re-uses the cache otherwise).
+  const stravaKey = stravaRuns.length ? `${stravaRuns[0].stravaId}x${stravaRuns.length}` : 'none';
+  const stravaSwimKey = stravaSwimRuns.length ? `${stravaSwimRuns[0].stravaId}x${stravaSwimRuns.length}` : 'none';
+  const cacheKey = `${lastIpptDate}|${lastSwimDate}|${stravaKey}|${stravaSwimKey}`;
 
   const cachedPlan = state.workoutPlan?.cacheKey === cacheKey ? state.workoutPlan?.plan : null;
   const [plan, setPlan] = useState(cachedPlan);
@@ -2391,6 +2789,19 @@ function WeekendPlannerScreen({ state, updateState, activeModule }) {
     });
     const latestIppt = recentAttempts[recentAttempts.length - 1];
     const recentSwim = swimAttempts.slice(-3).map((a) => ({ time: formatRunTime(a.timeSeconds) }));
+    // Last 5 synced runs/swims give the AI a live read on real-world volume.
+    const recentRuns = stravaRuns.slice(0, 5).map((r) => ({
+      name: r.name,
+      distanceKm: r.distanceKm,
+      time: stravaService.formatDuration(r.durationSeconds),
+      pacePerKm: r.pacePerKm,
+    }));
+    const recentSwimRuns = stravaSwimRuns.slice(0, 5).map((s) => ({
+      name: s.name,
+      distanceKm: s.distanceKm,
+      time: stravaService.formatDuration(s.durationSeconds),
+      pacePer100m: s.pacePer100m,
+    }));
 
     nlpService.getWeekendPlan({
       pesStatus: profile.pesStatus,
@@ -2404,6 +2815,8 @@ function WeekendPlannerScreen({ state, updateState, activeModule }) {
       ).award : null,
       attempts: recentAttempts,
       swimAttempts: recentSwim,
+      stravaRuns: recentRuns,
+      stravaSwims: recentSwimRuns,
     }).then((data) => {
       if (data) {
         setPlan(data);
