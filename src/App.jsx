@@ -43,10 +43,28 @@ import WhatToExpectPage from './pages/WhatToExpectPage';
 import FitnessPrepPage from './pages/FitnessPrepPage';
 import AiChatPage from './pages/AiChatPage';
 import PeerIntelPage from './pages/PeerIntelPage';
+import armyOperator from './assets/operators/army-operator.png';
+import navyOperator from './assets/operators/navy-operator.png';
+import airforceOperator from './assets/operators/airforce-operator.png';
+import disOperator from './assets/operators/dis-operator.png';
 
 ChartJS.register(CategoryScale, LinearScale, LineElement, PointElement, Tooltip, Filler);
 
 const STORAGE_KEY = 'cover-me-state';
+const OPERATOR_BY_BRANCH = {
+  army: armyOperator,
+  land: armyOperator,
+  'land force': armyOperator,
+  navy: navyOperator,
+  air: airforceOperator,
+  airforce: airforceOperator,
+  'air force': airforceOperator,
+  rsaf: airforceOperator,
+  dis: disOperator,
+  digital: disOperator,
+  'digital force': disOperator,
+  'digital and intelligence service': disOperator,
+};
 
 // Bump this whenever the seeded mock data below (journal, intel/wall posts, IPPT,
 // training feed, etc.) changes. On load, a saved copy with an older version is
@@ -197,7 +215,7 @@ function ModuleHomeRoute({ module, state, updateState, phase }) {
   if (module === 'enlist') {
     return <EnlistDashboardPage state={state} updateState={updateState} phase={phase} />;
   }
-  return <HomeDashboard state={state} phase={phase} activeModule={module} />;
+  return <HomeDashboard state={state} activeModule={module} />;
 }
 
 function AppRoutes({ state, updateState }) {
@@ -295,6 +313,7 @@ function AppShell({ state, updateState }) {
               path="/train"
               element={<TrainScreen state={state} updateState={updateState} activeModule={activeModule} />}
             />
+            <Route path="/training-feed" element={<TrainingFeedScreen state={state} updateState={updateState} />} />
             <Route path="/weekend-planner" element={<WeekendPlannerScreen state={state} activeModule={activeModule} />} />
             <Route
               path="/profile"
@@ -319,14 +338,114 @@ function AppShell({ state, updateState }) {
 
 
 
-function HomeDashboard({ state, phase, activeModule }) {
+function getMissionVariant(title, activeModule) {
+  if (title.includes('IPPT') || title.includes('Fitness')) return 'ippt';
+  if (title.includes('Sentinel')) return 'sentinel';
+  if (title.includes('Buddy') || title.includes('Wall')) return 'buddy';
+  if (title.includes('Record')) return 'record';
+  if (activeModule === 'enlist') return 'enlist';
+  return 'intel';
+}
+
+function MissionIcon({ title, variant }) {
+  const common = {
+    width: 28,
+    height: 28,
+    viewBox: '0 0 24 24',
+    fill: 'none',
+    stroke: 'currentColor',
+    strokeWidth: 1.7,
+    strokeLinecap: 'round',
+    strokeLinejoin: 'round',
+    'aria-hidden': true,
+  };
+
+  if (variant === 'ippt') {
+    return <svg {...common}><path d="M6 7v10M18 7v10M3 9v6M21 9v6M6 12h12" /></svg>;
+  }
+  if (title.includes('Sentinel')) {
+    return <svg {...common}><path d="M12 21s-7-4.4-7-10a4 4 0 0 1 7-2.4A4 4 0 0 1 19 11c0 5.6-7 10-7 10Z" /><path d="M8.5 13h2l1.2-2.5 1.7 5 1.1-2.5h1" /></svg>;
+  }
+  if (title.includes('Buddy')) {
+    return <svg {...common}><path d="M8 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM16 10a2.5 2.5 0 1 0 0-5" /><path d="M3 19c.4-3.3 2-5 5-5s4.6 1.7 5 5M14 14c3.5 0 5.3 1.7 5.7 5" /></svg>;
+  }
+  if (title.includes('Wall')) {
+    return <svg {...common}><path d="M7 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM17 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" /><path d="M2.5 19c.4-3.4 1.9-5 4.5-5s4.1 1.6 4.5 5M12.5 19c.4-3.4 1.9-5 4.5-5s4.1 1.6 4.5 5" /></svg>;
+  }
+  if (title.includes('Support')) {
+    return <svg {...common}><circle cx="12" cy="12" r="8" /><circle cx="12" cy="12" r="3" /><path d="m6.3 6.3 3.6 3.6M14.1 14.1l3.6 3.6M17.7 6.3l-3.6 3.6M9.9 14.1l-3.6 3.6" /></svg>;
+  }
+  if (variant === 'record') {
+    return <svg {...common}><path d="M6 3h9l3 3v15H6z" /><path d="M15 3v4h4M9 12h6M9 16h4" /></svg>;
+  }
+  if (title.includes('Chat')) {
+    return <svg {...common}><path d="M4 5h16v11H9l-5 4z" /><path d="M8 9h8M8 12h5" /></svg>;
+  }
+  if (title.includes('Advice')) {
+    return <svg {...common}><path d="M5 4h14v16H5zM8 8h8M8 12h8M8 16h5" /></svg>;
+  }
+  return <svg {...common}><path d="M4 19V5h16v14M8 5V3h8v2M8 10h8M8 14h5" /></svg>;
+}
+
+function MissionCard({ block, activeModule, onOpen }) {
+  const variant = getMissionVariant(block.title, activeModule);
+
+  return (
+    <button className={`ops-mission-card mission-${variant}`} type="button" onClick={onOpen}>
+      <div className="ops-mission-card-head">
+        <span className="ops-mission-icon"><MissionIcon title={block.title} variant={variant} /></span>
+      </div>
+      <div className="ops-mission-card-body">
+        <h2>{block.title}</h2>
+        <p>{block.body}</p>
+      </div>
+      <span className="ops-mission-open">Open mission <b>→</b></span>
+    </button>
+  );
+}
+
+function OperatorHero({ profile, activeModule, branch }) {
+  const normalizedBranch = String(branch || 'army').trim().toLowerCase();
+  const operatorImage = OPERATOR_BY_BRANCH[normalizedBranch] || armyOperator;
+  const operatorLabel =
+    operatorImage === navyOperator
+      ? 'Singapore Navy serviceman'
+      : operatorImage === airforceOperator
+        ? 'Singapore Air Force serviceman'
+        : operatorImage === disOperator
+          ? 'Digital and Intelligence Service serviceman'
+          : 'Singapore serviceman';
+
+  return (
+    <section className="ops-operator-hero" aria-label="Current service operator">
+      <div className="ops-operator-aura" />
+      <div className="ops-operator-copy">
+        <span className="ops-eyebrow">{activeModule === 'serve' ? 'Active service operator' : 'Pre-enlistment operator'}</span>
+        <h1>{toTitleCase(profile.fullName)}</h1>
+        <p>
+          PES {profile.pesStatus} · {profile.unit} · {(profile.vocation || 'Infantry').toUpperCase()}
+        </p>
+      </div>
+      <div className="ops-operator-visual">
+        <img
+          key={operatorImage}
+          src={operatorImage}
+          alt={`${operatorLabel} in field equipment`}
+          onError={(event) => {
+            event.currentTarget.onerror = null;
+            event.currentTarget.src = armyOperator;
+          }}
+        />
+      </div>
+    </section>
+  );
+}
+
+function HomeDashboard({ state, activeModule }) {
   const navigate = useNavigate();
   const profile = state.auth.profile;
-  const firstName = profile.fullName.split(' ')[1] || profile.fullName.split(' ')[0];
   const ordDate = addYears(profile.enlistmentDate, 2);
   const ordDays = daysBetween(getToday(), ordDate);
-  const enlistDays = daysBetween(getToday(), profile.enlistmentDate);
-  const weekOfNs = getWeekOfNs(profile.enlistmentDate);
   const moduleContent =
     activeModule === 'enlist'
       ? {
@@ -336,123 +455,110 @@ function HomeDashboard({ state, phase, activeModule }) {
           detailBlocks: [
             {
               title: 'What to Expect',
-              body: 'A structured first-look at enlistment day, reporting flow, and what matters most early.',
+              body: 'See what enlistment day looks like before you step through the gates.',
               to: '/what-to-expect',
             },
             {
               title: 'PES-Based Fitness Prep',
-              body: 'Training plans calibrated to your Physical Employment Status and chosen IPPT target.',
+              body: 'Build a realistic training plan around your PES and fitness goal.',
               to: '/fitness-prep',
             },
             {
               title: 'AI Chatbot',
-              body: 'Retrieval-only SAF answers for jargon, admin questions, and day-one uncertainty.',
+              body: 'Get quick, clear answers to the NS questions you do not want to guess.',
               to: '/ai-chat',
             },
             {
               title: 'Batch Advice Feed',
-              body: 'Real batch intel organised by vocation so you know what helped others before enlistment.',
+              body: 'Hear the tips servicemen wish they knew before their first day.',
               to: '/peer-intel',
             },
           ],
         }
       : {
-          eyebrow: 'Module 2 · Serve',
-          summary:
-            'Four interconnected features support physical performance, mental wellness, and peer solidarity throughout active service.',
           detailBlocks: [
             {
               title: 'IPPT Tracker',
-              body: 'Log attempts, set goals, and follow an adaptive training roadmap with clear benchmarks.',
+              body: 'Track every attempt, chase your next award, and see exactly where to improve.',
               to: '/train',
             },
             {
               title: 'Sentinel',
-              body: 'Wellness journaling with NLP sentiment analysis and a user-controlled escalation ladder.',
+              body: 'Check in privately, spot how you have been feeling, and find support when you need it.',
               to: '/journal',
             },
             {
               title: 'Buddy Tap',
-              body: 'Anonymous single-action concern flag. Three independent taps trigger a direct supportive message.',
+              body: 'Quietly look out for a mate when something feels off.',
               to: '/buddy-tap',
             },
             {
-              title: 'Peer Support Wall',
-              body: 'Named support posts by phase and topic, with resources surfaced before anything goes live.',
-              to: '/peer-support',
-            },
-            {
-              title: 'Support Options',
-              body: 'User-controlled escalation: AI companion, peer support leader, or SAF counselling. You decide, every time.',
-              to: '/escalation',
+              title: 'Peer Intel Feed',
+              body: 'Share training wins, swap encouragement, and react to what your mates are achieving.',
+              to: '/training-feed',
             },
           ],
         };
 
-  const ordPct = Math.min(100, Math.round(((730 - ordDays) / 730) * 100));
   const ipptAttempts = state.ippt.attempts;
   const latestIppt = ipptAttempts.length ? ipptAttempts[ipptAttempts.length - 1] : null;
   const latestScore = latestIppt
     ? calculateIpptScore(latestIppt.pushups, latestIppt.situps, latestIppt.runSeconds)
     : null;
   const streakDays = getJournalStreak(state.journal.entries);
-
+  const branch = state.ui?.branch || 'army';
+  const missionBlocks = [
+    ...moduleContent.detailBlocks,
+    {
+      title: 'Service Record',
+      body: 'Keep your profile, milestones, and service details together in one place.',
+      to: '/profile',
+    },
+  ];
+  const splitIndex = Math.ceil(missionBlocks.length / 2);
   return (
-    <div className="dash-page">
-      {/* Identity + ORD hero */}
-      <Panel ticks elevated style={{ padding: 26, display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 30, alignItems: 'center', marginBottom: 16 }}>
-        <div>
-          <span className="label" style={{ color: 'var(--accent-text)', marginBottom: 12 }}>ACTIVE SERVICE</span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-            <div style={{ width: 52, height: 52, borderRadius: 8, background: 'var(--accent-soft)', border: '1px solid var(--accent-line)', display: 'grid', placeItems: 'center', color: 'var(--accent-text)' }}>
-              <Insignia branch={state.ui?.branch || 'army'} size={28} />
-            </div>
-            <div>
-              <div className="h-display" style={{ fontSize: 22 }}>{toTitleCase(profile.fullName)}</div>
-              <div className="mono-dim" style={{ color: 'var(--text-dim)' }}>
-                {profile.pesStatus} · {profile.unit} · {(profile.vocation || 'INFANTRY').toUpperCase()}
-              </div>
-            </div>
+    <div className={`dash-page ops-hub ops-branch-${branch}`}>
+      <ScreenHeader
+        title="Operations Hub"
+        className="ops-hub-header"
+        action={
+          <div className="ops-header-stats">
+            <div><span>Current IPPT</span><strong>{latestScore?.score ?? '—'}</strong></div>
+            <div><span>Current award</span><strong>{latestScore?.award ?? '—'}</strong></div>
+            <div><span>Journal streak</span><strong>{streakDays} nights</strong></div>
+            <div><span>Days to ORD</span><strong>{ordDays}</strong></div>
           </div>
-        </div>
-        <div style={{ borderLeft: '1px solid var(--border)', paddingLeft: 30 }}>
-          <span className="label" style={{ marginBottom: 8 }}>ORD COUNTDOWN</span>
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
-            <span className="stat-val" style={{ fontSize: 56, color: 'var(--amber)' }}>{ordDays}</span>
-            <span className="mono" style={{ color: 'var(--text-dim)', fontSize: 14 }}>DAYS REMAINING</span>
-          </div>
-          <div style={{ height: 6, background: 'var(--bg)', borderRadius: 3, marginTop: 14, overflow: 'hidden' }}>
-            <div style={{ width: `${ordPct}%`, height: '100%', background: 'var(--accent-2)' }} />
-          </div>
-          <div className="mono-dim" style={{ display: 'flex', justifyContent: 'space-between', marginTop: 7 }}>
-            <span>WEEK {weekOfNs} OF NS</span><span>{ordPct}% COMPLETE</span>
-          </div>
-        </div>
-      </Panel>
+        }
+      />
 
-      {/* Readiness band */}
-      <Panel flush style={{ marginBottom: 16, padding: '18px 26px' }}>
-        <div className="readiness-band">
-          <Stat label="LATEST IPPT" value={latestScore ? latestScore.score : '—'} unit="PTS" size={34} />
-          <Stat label="CURRENT AWARD" value={latestScore ? latestScore.award : '—'} size={26} color="var(--amber)" />
-          <Stat label="2.4KM PB" value={latestIppt ? formatRunTime(Math.min(...ipptAttempts.map((a) => a.runSeconds))) : '—'} size={34} />
-          <Stat label="JOURNAL STREAK" value={streakDays} unit="D" size={34} />
+      <div className="ops-mission-layout">
+        <div className="ops-mission-column ops-mission-column-left">
+          {missionBlocks.slice(0, splitIndex).map((block) => (
+            <MissionCard
+              key={block.title}
+              block={block}
+              activeModule={activeModule}
+              onOpen={() => navigate(block.to)}
+            />
+          ))}
         </div>
-      </Panel>
 
-      <span className="label" style={{ margin: '30px 0 14px', display: 'block' }}>MODULE DECK</span>
-      <div className="dash-features-grid">
-        {moduleContent.detailBlocks.map((block) => (
-          <button key={block.title} className="feat-card" onClick={() => navigate(block.to)}>
-            <Panel className="feat-card-inner" style={{ gap: 0 }}>
-              <div style={{ marginTop: 'auto' }}>
-                <div className="h-title" style={{ fontSize: 18, marginBottom: 8 }}>{block.title}</div>
-                <div className="feature-card-copy" style={{ color: 'var(--text-dim)', fontSize: 14, lineHeight: 1.55, marginBottom: 14 }}>{block.body}</div>
-                <span className="feat-card-arrow">Open →</span>
-              </div>
-            </Panel>
-          </button>
-        ))}
+        <OperatorHero
+          profile={profile}
+          activeModule={activeModule}
+          branch={branch}
+        />
+
+        <div className="ops-mission-column ops-mission-column-right">
+          {missionBlocks.slice(splitIndex).map((block) => (
+            <MissionCard
+              key={block.title}
+              block={block}
+              activeModule={activeModule}
+              onOpen={() => navigate(block.to)}
+            />
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -1040,7 +1146,7 @@ function TrainScreen({ state, updateState }) {
 
   return (
     <div style={{ height: '100%', overflow: 'auto', padding: '28px 36px' }}>
-      <h1 className="h-display" style={{ fontSize: 48, marginBottom: 24 }}>IPPT TRACKER</h1>
+      <ScreenHeader title="IPPT Tracker" />
 
       {/* Row 1: 2-column overview */}
       <div style={{ display: 'grid', gridTemplateColumns: '1.1fr 1.4fr', gap: 16, marginBottom: 16 }}>
@@ -1247,6 +1353,125 @@ function WeekendPlannerScreen({ state, activeModule }) {
   );
 }
 
+const FEED_REACTIONS = [
+  { key: 'cheer', emoji: '💪', label: 'Cheer' },
+  { key: 'fire', emoji: '🔥', label: 'Fire' },
+  { key: 'respect', emoji: '🫡', label: 'Respect' },
+];
+
+const FEED_FEELINGS = ['🏆 Proud', '💪 Motivated', '😊 Happy', '🔥 On fire', '🎯 Focused', '😮‍💨 Relieved'];
+
+function TrainingFeedScreen({ state, updateState }) {
+  const profile = state.auth.profile;
+  const posts = state.social.trainingFeed || [];
+  const [showCompose, setShowCompose] = useState(false);
+  const [title, setTitle] = useState('');
+  const [detail, setDetail] = useState('');
+  const [feeling, setFeeling] = useState('');
+
+  const react = (postId, key) => {
+    updateState((current) => ({
+      ...current,
+      social: {
+        ...current.social,
+        trainingFeed: current.social.trainingFeed.map((post) => {
+          if (post.id !== postId) return post;
+          const wasActive = post.userReaction === key;
+          const reactions = { ...post.reactions };
+          if (post.userReaction) {
+            reactions[post.userReaction] = Math.max(0, (reactions[post.userReaction] || 0) - 1);
+          }
+          if (!wasActive) reactions[key] = (reactions[key] || 0) + 1;
+          return { ...post, reactions, userReaction: wasActive ? '' : key };
+        }),
+      },
+    }));
+  };
+
+  const publish = () => {
+    if (!title.trim() && !detail.trim()) return;
+    updateState((current) => ({
+      ...current,
+      social: {
+        ...current.social,
+        trainingFeed: [
+          {
+            id: Date.now(),
+            name: profile.fullName,
+            unit: profile.unit,
+            recency: 'Just now',
+            headline: title.trim() || 'Training update',
+            statline: '',
+            detail: detail.trim(),
+            chips: feeling ? [feeling] : [],
+            reactions: { cheer: 0, fire: 0, respect: 0 },
+            userReaction: '',
+            comments: [],
+          },
+          ...current.social.trainingFeed,
+        ],
+      },
+    }));
+    setTitle('');
+    setDetail('');
+    setFeeling('');
+    setShowCompose(false);
+  };
+
+  return (
+    <section className="training-feed-page">
+      <ScreenHeader
+        title="Peer Intel Feed"
+        subtitle="Training wins, useful lessons, and encouragement from the people serving alongside you."
+        action={<button className="primary-button" onClick={() => setShowCompose(true)}>+ Post update</button>}
+      />
+      <div className="training-feed-list">
+        {posts.map((post) => (
+          <Panel key={post.id} ticks className="training-feed-card">
+            <div className="training-feed-author">
+              <span>{(post.name || 'U')[0]}</span>
+              <div><strong>{post.name}</strong><small>{post.unit} · {post.recency}</small></div>
+              {post.statline && <b>{post.statline}</b>}
+            </div>
+            <h2>{post.headline}</h2>
+            <p>{post.detail}</p>
+            {!!post.chips?.length && (
+              <div className="training-feed-chips">{post.chips.map((chip) => <span key={chip}>{chip}</span>)}</div>
+            )}
+            <div className="training-feed-reactions">
+              {FEED_REACTIONS.map((reaction) => (
+                <button
+                  key={reaction.key}
+                  className={post.userReaction === reaction.key ? 'active' : ''}
+                  onClick={() => react(post.id, reaction.key)}
+                  aria-label={`${reaction.label} reaction`}
+                >
+                  {reaction.emoji} {post.reactions?.[reaction.key] || 0}
+                </button>
+              ))}
+              <span>{post.comments?.length || 0} replies</span>
+            </div>
+          </Panel>
+        ))}
+      </div>
+      {showCompose && (
+        <Modal title="Post to Peer Intel" onClose={() => setShowCompose(false)}>
+          <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="What happened?" />
+          <textarea value={detail} onChange={(event) => setDetail(event.target.value)} placeholder="Share the win, lesson, or encouragement…" rows={4} />
+          <div className="training-feed-feelings">
+            {FEED_FEELINGS.map((item) => (
+              <button key={item} className={feeling === item ? 'active' : ''} onClick={() => setFeeling(feeling === item ? '' : item)}>
+                {item}
+              </button>
+            ))}
+          </div>
+          <button className="primary-button" onClick={publish}>Post update</button>
+        </Modal>
+      )}
+    </section>
+  );
+}
+
 function JournalScreen({ state, updateState }) {
   const navigate = useNavigate();
   const [entry, setEntry] = useState('');
@@ -1254,6 +1479,7 @@ function JournalScreen({ state, updateState }) {
   const [crisisState, setCrisisState] = useState(false);
   const [dismissedDip, setDismissedDip] = useState(false);
   const [trendInfo, setTrendInfo] = useState(null);
+  const [expandedReflectionId, setExpandedReflectionId] = useState(null);
 
   // AI trend narrative: recomputed whenever the recent scores change (e.g. a new
   // entry is submitted). Needs at least 3 entries — otherwise we show nothing.
@@ -1336,70 +1562,48 @@ function JournalScreen({ state, updateState }) {
     setSaving(false);
   };
 
-  const scoreSeries = entries.map((item) => Math.round(entryScore(item) * 100));
-  const latestScore = scoreSeries.length ? scoreSeries[scoreSeries.length - 1] : null;
-  const chartData = {
-    labels: entries.map((item) => shortDate(entryDay(item))),
-    datasets: [
-      {
-        data: scoreSeries,
-        borderColor: '#4A7C59',
-        backgroundColor: 'rgba(74, 124, 89, 0.12)',
-        tension: 0.35,
-        fill: true,
-        pointRadius: 3,
-        pointBackgroundColor: '#4A7C59',
-        pointBorderColor: '#fffdf8',
-        pointBorderWidth: 1.5,
-      },
-    ],
-  };
-
   const svgScores = entries.map((item) => ({ v: entryScore(item) }));
   const declining = dipState;
 
   return (
-    <div style={{ height: '100%', overflow: 'auto', padding: '28px 36px' }}>
-      {/* Header + Streak */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 24 }}>
-        <div>
-          <h1 className="h-display" style={{ fontSize: 48 }}>SENTINEL</h1>
-        </div>
-        <Panel flush style={{ padding: '12px 20px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <span className="stat-label">JOURNAL STREAK</span>
-            <span className="stat-val" style={{ fontSize: 30 }}>{streakDays}</span>
-            <span className="stat-unit" style={{ fontSize: 16, color: 'var(--text-dim)', marginLeft: 0 }}>NIGHTS</span>
-          </div>
-        </Panel>
+    <div className="sentinel-page">
+      <ScreenHeader
+        title="Sentinel"
+        subtitle="A private place to pause and write."
+      />
+      <div className="sentinel-privacy">
+        <span aria-hidden="true">◌</span>
+        <p><strong>Your journal is private.</strong> It is not shared with commanders or peers.</p>
       </div>
       <StreakCalendar entries={state.journal.entries} streakDays={streakDays} />
 
-      <div className="sentinel-grid" style={{ marginBottom: 24 }}>
-        {/* Left — prompt + entry */}
-        <Panel ticks style={{ padding: 24 }}>
-          <span className="label" style={{ marginBottom: 12 }}>TONIGHT'S REFLECTION</span>
-          <p style={{ fontFamily: 'var(--font-head)', fontWeight: 700, fontSize: 26, lineHeight: 1.15, marginBottom: 18 }}>{prompt}</p>
+      <div className="sentinel-reflection-grid">
+        <section className="sentinel-card sentinel-composer">
+          <span className="sentinel-section-label">Tonight’s reflection</span>
+          <h2>{prompt}</h2>
+          <p className="sentinel-gentle-copy">Write whatever feels useful tonight.</p>
           <textarea
             className="journal-textarea"
             value={entry}
             onChange={(e) => setEntry(e.target.value)}
-            placeholder="Write freely. No scores, no judgement — just what's on your mind."
+            placeholder="Write freely. Only you can see this."
           />
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 16 }}>
-            <span className="mono-dim">PRIVATE · ENCRYPTED · {entry.trim().split(/\s+/).filter(Boolean).length} WORDS</span>
-            <button className="btn" disabled={saving || !entry.trim()} onClick={submitEntry}>
-              {saving ? 'REFLECTING…' : 'SUBMIT ENTRY'}
+          <div className="sentinel-composer-footer">
+            <span>Private on your device · {entry.trim().split(/\s+/).filter(Boolean).length} words</span>
+            <button className="sentinel-save-button" disabled={saving || !entry.trim()} onClick={submitEntry}>
+              {saving ? 'Saving…' : 'Save reflection'}
             </button>
           </div>
-        </Panel>
+        </section>
 
-        {/* Right — trend chart */}
-        <Panel ticks style={{ padding: '22px 24px 16px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10 }}>
-            <span className="label">EMOTIONAL TREND · {entries.length} NIGHTS</span>
-            <span className="mono-dim" style={{ color: declining ? 'var(--danger)' : 'var(--success)' }}>
-              {declining ? '▼ DECLINING' : '▲ STABLE'}
+        <section className="sentinel-card sentinel-trend">
+          <div className="sentinel-card-heading">
+            <div>
+              <span className="sentinel-section-label">Reflection trend</span>
+              <h2>How you’ve been feeling</h2>
+            </div>
+            <span className={`sentinel-trend-state ${declining ? 'low' : 'steady'}`}>
+              {declining ? 'Recent entries feel heavier' : 'Recent entries look steady'}
             </span>
           </div>
           <SvgLineChart
@@ -1407,85 +1611,102 @@ function JournalScreen({ state, updateState }) {
             accessor={(d) => d.v}
             yMax={1} yMin={0}
             height={200}
-            color={declining ? '#D98A55' : 'var(--amber)'}
+            color={declining ? '#bd8068' : 'var(--sentinel-accent)'}
+            gridColor="rgba(255,255,255,0.07)"
+            textColor="var(--sentinel-copy)"
             fmt={(v) => v.toFixed(1)}
           />
-          <div className="mono-dim" style={{ marginTop: 6 }}>
+          <p className="sentinel-chart-copy">
             {trendInfo ? trendInfo.narrative : 'Self-awareness is the mechanism. Only you ever see this graph.'}
-          </div>
+          </p>
           {declining && !dismissedDip && (
-            <button className="btn ghost full" style={{ marginTop: 14 }} onClick={() => navigate('/escalation')}>
-              REVIEW SUPPORT OPTIONS →
+            <button className="sentinel-secondary-button" onClick={() => navigate('/escalation')}>
+              Review support options
             </button>
           )}
           {declining && !dismissedDip && (
-            <button className="btn neutral full" style={{ marginTop: 8 }} onClick={() => setDismissedDip(true)}>
-              I'M OKAY, DISMISS
+            <button className="sentinel-text-button" onClick={() => setDismissedDip(true)}>
+              I’m okay for now
             </button>
           )}
-        </Panel>
+        </section>
       </div>
-      {/* How Sentinel responds */}
-      <span className="label" style={{ margin: '30px 0 12px', display: 'block' }}>HOW SENTINEL RESPONDS</span>
-      <div style={{ display: 'grid', gridTemplateColumns: '1.25fr 1fr', gap: 16, marginBottom: 24 }}>
-        <Panel ticks style={{ padding: 26 }}>
+
+      <div className="sentinel-support-grid">
+        <section className="sentinel-card sentinel-explainer">
+          <span className="sentinel-section-label">Your choices</span>
+          <h2>Support stays in your control</h2>
           {[
-            ['▷', 'WHEN YOUR TREND DECLINES', 'If your private trend drops for 5+ days, Sentinel shows you your own graph and lets you decide: AI companion, peer support, SAF counselling, or dismiss. Always your call.'],
-            ['◈', 'NO AUTOMATIC ALERTS TO SUPERIORS', 'No sergeant, commander, or superior is ever notified automatically. You decide how far any escalation goes, every single time.'],
-            ['◮', 'ONE EXCEPTION — EXPLICIT CRISIS LANGUAGE', 'If an entry contains explicit self-harm or suicide language, crisis resources are surfaced to you immediately. Even then, no commander is notified.'],
-          ].map(([icon, t, d]) => (
-            <div key={t} style={{ display: 'flex', gap: 14, marginBottom: 20 }}>
-              <span style={{ color: 'var(--accent-text)', marginTop: 1, fontSize: 15, width: 18, flexShrink: 0 }}>{icon}</span>
+            ['When entries feel heavier', 'You can review support options whenever you choose.'],
+            ['Nothing is shared automatically', 'Commanders and superiors are not notified.'],
+            ['If you may be in immediate danger', 'Confidential crisis resources appear without sharing your reflection.'],
+          ].map(([title, description]) => (
+            <div key={title} className="sentinel-explainer-row">
+              <span aria-hidden="true">•</span>
               <div>
-                <div style={{ fontFamily: 'var(--font-head)', fontWeight: 700, fontSize: 16, letterSpacing: '0.03em', marginBottom: 4 }}>{t}</div>
-                <div style={{ color: 'var(--text-dim)', fontSize: 13.5, lineHeight: 1.55 }}>{d}</div>
+                <h3>{title}</h3>
+                <p>{description}</p>
               </div>
             </div>
           ))}
-        </Panel>
-        <Panel style={{ padding: 26 }}>
-          <span className="label" style={{ marginBottom: 6 }}>SUPPORT RESOURCES</span>
-          <div className="mono-dim" style={{ marginBottom: 18 }}>CONFIDENTIAL · ALWAYS AVAILABLE</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        </section>
+        <section className="sentinel-card sentinel-resources">
+          <span className="sentinel-section-label">Support resources</span>
+          <h2>Confidential help is always available</h2>
+          <div className="sentinel-resource-list">
             {[
               ['SAF COUNSELLING CENTRE', 'Direct counsellor pathway', 'BOOK'],
               ['SAF COUNSELLING CARELINE', '24-hour', '1800 278 0022'],
               ['IMH MENTAL HEALTH HELPLINE', '24-hour', '6389 2222'],
               ['SAMARITANS OF SINGAPORE', 'SOS · 24-hour', '1767'],
             ].map(([t, sub, n]) => (
-              <div key={t} className="crisis-resource-row">
+              <div key={t} className="sentinel-resource-row">
                 <div>
-                  <div style={{ fontFamily: 'var(--font-head)', fontWeight: 700, fontSize: 14, letterSpacing: '0.02em' }}>{t}</div>
-                  <div className="mono-dim" style={{ fontSize: 10.5 }}>{sub}</div>
+                  <strong>{t}</strong>
+                  <span>{sub}</span>
                 </div>
-                <span className="mono" style={{ color: 'var(--amber)', fontSize: 15 }}>{n}</span>
+                <b>{n}</b>
               </div>
             ))}
           </div>
-        </Panel>
+        </section>
       </div>
 
-      {/* Past reflections */}
-      <span className="label" style={{ margin: '0 0 12px', display: 'block' }}>PAST REFLECTIONS</span>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <section className="sentinel-past-section">
+        <div className="sentinel-past-heading">
+          <span className="sentinel-section-label">Past reflections</span>
+          <p>A private record of the moments you chose to check in.</p>
+        </div>
+        <div className="sentinel-past-list">
         {allReflections.length === 0 ? (
           <div className="empty-state">No reflections yet. Your first entry will appear here.</div>
         ) : allReflections.map((item, index) => {
           const score = entryScore(item);
+          const rowId = item.id ?? `${entryDay(item)}-${index}`;
+          const isExpanded = expandedReflectionId === rowId;
           return (
-            <Panel key={item.id ?? `${entryDay(item)}-${index}`} flush
-              className="past-entry-row"
-              style={{ borderLeftColor: score < 0.5 ? 'var(--danger)' : 'var(--accent)' }}
+            <article
+              key={rowId}
+              className={`sentinel-entry-card ${isExpanded ? 'expanded' : ''}`}
+              onClick={() => setExpandedReflectionId(isExpanded ? null : rowId)}
             >
-              <span className="mono" style={{ color: 'var(--text-dim)', fontSize: 12, width: 52 }}>{shortDate(entryDay(item))}</span>
-              <span className="past-entry-score" style={{ color: score < 0.5 ? '#D98A55' : 'var(--amber)' }}>
-                {score.toFixed(2)}
-              </span>
-              <span style={{ flex: 1, color: 'var(--text-dim)', fontSize: 13.5 }}>{item.text}</span>
-            </Panel>
+              <div className="sentinel-entry-summary">
+                <time>{shortDate(entryDay(item))}</time>
+                <span className={`sentinel-entry-tone ${score < 0.5 ? 'low' : 'steady'}`} aria-label="Reflection tone" />
+                <p>{item.text}</p>
+                <span>{isExpanded ? 'Close' : 'Read'}</span>
+              </div>
+              {isExpanded && (
+                <div className="reflection-expanded">
+                  {item.prompt && <span>Prompt · {item.prompt}</span>}
+                  <p>{item.text}</p>
+                </div>
+              )}
+            </article>
           );
         })}
-      </div>
+        </div>
+      </section>
 
       {crisisState && (
         <div className="overlay-bg">
@@ -1942,12 +2163,15 @@ function ModuleToggle({ activeModule, onChange }) {
   );
 }
 
-function ScreenHeader({ eyebrow, title, subtitle }) {
+function ScreenHeader({ eyebrow, title, subtitle, action, className = '' }) {
   return (
-    <header style={{ marginBottom: 24 }}>
-      {eyebrow && <span className="label" style={{ color: 'var(--accent-text)', marginBottom: 8 }}>{eyebrow}</span>}
-      <h1 className="h-display" style={{ fontSize: 48 }}>{title}</h1>
-      {subtitle && <p style={{ color: 'var(--text-dim)', marginTop: 4 }}>{subtitle}</p>}
+    <header className={`screen-page-header ${className}`}>
+      <div>
+        {eyebrow && <span className="label screen-page-eyebrow">{eyebrow}</span>}
+        <h1 className="h-display">{title}</h1>
+        {subtitle && <p>{subtitle}</p>}
+      </div>
+      {action && <div className="screen-page-action">{action}</div>}
     </header>
   );
 }
@@ -1988,12 +2212,6 @@ function ProfileRow({ label, value }) {
 
 function getPhase(enlistmentDate) {
   return getToday() < new Date(enlistmentDate) ? 'enlist' : 'serve';
-}
-
-function getWeekOfNs(enlistmentDate) {
-  const start = new Date(enlistmentDate);
-  const diff = Math.max(0, getToday() - start);
-  return Math.floor(diff / (1000 * 60 * 60 * 24 * 7)) + 1;
 }
 
 function addYears(dateString, years) {
@@ -2142,59 +2360,6 @@ function localKey(date) {
   return `${year}-${month}-${day}`;
 }
 
-// Heat level (0 = no entry, 1–4 = increasing positivity) for the contribution grid.
-function scoreLevel(score) {
-  if (score >= 75) return 4;
-  if (score >= 60) return 3;
-  if (score >= 45) return 2;
-  return 1;
-}
-
-// Builds a GitHub/NeetCode-style contribution grid: an array of week columns, each
-// holding 7 day cells (Sun→Sat), ending on the Saturday of the current week.
-function buildStreakCalendar(entries, weeks = 15) {
-  const dayScore = new Map();
-  entries.forEach((entry) => {
-    const day = entryDay(entry);
-    if (!day) return;
-    const key = localKey(new Date(day));
-    const score = Math.round(entryScore(entry) * 100);
-    dayScore.set(key, Math.max(dayScore.get(key) ?? 0, score));
-  });
-
-  const today = getToday();
-  const todayKey = localKey(today);
-  const end = new Date(today);
-  end.setDate(end.getDate() + (6 - end.getDay())); // roll forward to Saturday
-  const start = new Date(end);
-  start.setDate(start.getDate() - (weeks * 7 - 1)); // first cell is a Sunday
-
-  const columns = [];
-  for (let w = 0; w < weeks; w += 1) {
-    const days = [];
-    let monthLabel = '';
-    for (let d = 0; d < 7; d += 1) {
-      const date = new Date(start);
-      date.setDate(date.getDate() + w * 7 + d);
-      const key = localKey(date);
-      const score = dayScore.has(key) ? dayScore.get(key) : null;
-      // Label a column with the month name when its top cell starts a new month.
-      if (d === 0 && date.getDate() <= 7) {
-        monthLabel = date.toLocaleDateString('en-SG', { month: 'short' });
-      }
-      days.push({
-        key,
-        score,
-        level: score == null ? 0 : scoreLevel(score),
-        isFuture: date.getTime() > today.getTime(),
-        isToday: key === todayKey,
-      });
-    }
-    columns.push({ days, monthLabel });
-  }
-  return columns;
-}
-
 function getLongestStreak(entries) {
   const days = [...new Set(entries.map(entryDay).filter(Boolean))]
     .map((day) => localKey(new Date(day)))
@@ -2226,85 +2391,104 @@ function reflectionComment(entry) {
 }
 
 function StreakCalendar({ entries, streakDays }) {
-  const columns = useMemo(() => buildStreakCalendar(entries, 15), [entries]);
-  const totalEntries = useMemo(
-    () => new Set(entries.map(entryDay).filter(Boolean)).size,
-    [entries],
-  );
+  const months = useMemo(() => {
+    const counts = new Map();
+    entries.forEach((entry) => {
+      const day = entryDay(entry);
+      if (!day) return;
+      const key = localKey(new Date(day));
+      counts.set(key, (counts.get(key) || 0) + 1);
+    });
+
+    const today = getToday();
+    return Array.from({ length: 4 }, (_, monthIndex) => {
+      const monthDate = new Date(today.getFullYear(), today.getMonth() - (3 - monthIndex), 1);
+      const gridStart = new Date(monthDate);
+      gridStart.setDate(gridStart.getDate() - gridStart.getDay());
+      const weekCount = 4;
+      return {
+        key: `${monthDate.getFullYear()}-${monthDate.getMonth()}`,
+        label: monthDate.toLocaleDateString('en-SG', { month: 'short' }),
+        weeks: Array.from({ length: weekCount }, (_, weekIndex) => ({
+          key: weekIndex,
+          days: Array.from({ length: 7 }, (_, dayIndex) => {
+            const date = new Date(gridStart);
+            date.setDate(gridStart.getDate() + weekIndex * 7 + dayIndex);
+            const key = localKey(date);
+            const count = counts.get(key) || 0;
+            return {
+              key,
+              count,
+              level: Math.min(4, count),
+              inMonth: date.getMonth() === monthDate.getMonth(),
+              today: key === localKey(today),
+              future: date > today,
+            };
+          }),
+        })),
+      };
+    });
+  }, [entries]);
+  const totalEntries = entries.length;
   const longest = useMemo(() => getLongestStreak(entries), [entries]);
 
   return (
-    <div className="streak-card">
-      <div className="streak-head">
+    <section className="sentinel-streak-card">
+      <div className="sentinel-streak-head">
         <div>
-          <p className="kicker">Journal streak</p>
-          <h3 className="streak-title">
-            <span className="streak-flame" aria-hidden>🔥</span>
-            {streakDays} day{streakDays === 1 ? '' : 's'}
-          </h3>
+          <span className="sentinel-section-label">Journal streak</span>
+          <h2>Consistency &amp; reflection</h2>
         </div>
-        <div className="streak-stats">
-          <div className="streak-stat">
-            <strong>{longest}</strong>
-            <span>Longest</span>
+      </div>
+      <div className="sentinel-streak-content">
+        <div className="sentinel-streak-stats">
+          <div>
+            <span className="sentinel-streak-stat-label">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M7 3v3M17 3v3M4 9h16M5 5h14a1 1 0 0 1 1 1v14H4V6a1 1 0 0 1 1-1Z" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+                <path d="M8 13h3v3H8z" stroke="currentColor" strokeWidth="1.5" />
+              </svg>
+              Current streak
+            </span>
+            <strong>{streakDays} days</strong>
           </div>
-          <div className="streak-stat">
-            <strong>{totalEntries}</strong>
-            <span>Entries</span>
+          <div><span>Longest</span><strong>{longest}</strong></div>
+          <div><span>Entries</span><strong>{totalEntries}</strong></div>
+        </div>
+        <div className="sentinel-heatmap-wrap">
+          <div className="sentinel-heatmap-days" aria-hidden="true">
+            <span /><span>Mon</span><span /><span>Wed</span><span /><span>Fri</span><span />
+          </div>
+          <div className="sentinel-heatmap-scroll">
+            <div className="sentinel-heatmap">
+              {months.map((month) => (
+                <div key={month.key} className="sentinel-heatmap-month" style={{ flexGrow: month.weeks.length }}>
+                  <span>{month.label}</span>
+                  <div className="sentinel-heatmap-weeks" style={{ gridTemplateColumns: `repeat(${month.weeks.length}, 1fr)` }}>
+                    {month.weeks.map((week) => (
+                      <div key={week.key}>
+                        {week.days.map((day) => (
+                          <i
+                            key={day.key}
+                            className={`level-${day.level}${day.inMonth ? '' : ' outside'}${day.today ? ' today' : ''}${day.future ? ' future' : ''}`}
+                            title={`${shortDate(day.key)} · ${day.count} ${day.count === 1 ? 'reflection' : 'reflections'}`}
+                          />
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="sentinel-heatmap-legend">
+              <span>Fewer</span>
+              {[0, 1, 2, 3, 4].map((level) => <i key={level} className={`level-${level}`} />)}
+              <span>More reflections</span>
+            </div>
           </div>
         </div>
       </div>
-
-      <div className="streak-body">
-        <div className="streak-weekdays" aria-hidden>
-          <span />
-          <span>Mon</span>
-          <span />
-          <span>Wed</span>
-          <span />
-          <span>Fri</span>
-          <span />
-        </div>
-        <div className="streak-grid-wrap">
-          <div className="streak-months" aria-hidden>
-            {columns.map((col, i) => (
-              <span key={i} className="streak-month-label">
-                {col.monthLabel}
-              </span>
-            ))}
-          </div>
-          <div className="streak-grid">
-            {columns.map((col, i) => (
-              <div key={i} className="streak-col">
-                {col.days.map((cell) => (
-                  <span
-                    key={cell.key}
-                    className={`streak-cell lvl-${cell.level}${cell.isFuture ? ' is-future' : ''}${
-                      cell.isToday ? ' is-today' : ''
-                    }`}
-                    title={
-                      cell.isFuture
-                        ? ''
-                        : `${shortDate(cell.key)} · ${cell.score != null ? `${cell.score}/100` : 'No entry'}`
-                    }
-                  />
-                ))}
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      <div className="streak-legend" aria-hidden>
-        <span>Less</span>
-        <span className="streak-cell lvl-0" />
-        <span className="streak-cell lvl-1" />
-        <span className="streak-cell lvl-2" />
-        <span className="streak-cell lvl-3" />
-        <span className="streak-cell lvl-4" />
-        <span>More</span>
-      </div>
-    </div>
+    </section>
   );
 }
 

@@ -31,7 +31,6 @@ function LiveReadout() {
   }, []);
   return (
     <div className="live-readout">
-      <span>01°22'14"N 103°49'07"E</span>
       <span>
         {time.toLocaleTimeString('en-GB', { hour12: false })}
         <span className="blink"> ●</span> LIVE

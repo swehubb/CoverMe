@@ -4,6 +4,7 @@ import Insignia from '../shared/Insignia';
 const SERVE_NAV = [
   { id: 'ops',      label: 'OPS',    glyph: '⊞', path: '/serve' },
   { id: 'ippt',     label: 'IPPT',   glyph: '▲', path: '/train' },
+  { id: 'intel',    label: 'INTEL',  glyph: '◎', path: '/training-feed' },
   { id: 'sentinel', label: 'MIND',   glyph: '◈', path: '/journal' },
   { id: 'support',  label: 'SQUAD',  glyph: '⊕', path: '/buddy-tap' },
   { id: 'profile',  label: 'RECORD', glyph: '◮', path: '/profile' },
