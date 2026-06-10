@@ -12,20 +12,20 @@ const moduleContent = {
     description: 'Prep, orient, and collect community intel before the next phase starts.',
     features: [
       { title: 'What To Expect', description: 'Sample enlistment milestones and first-week guidance.', path: '/what-to-expect' },
-      { title: 'Peer Intel', description: 'Veteran notes and practical tips collected into the demo database.', path: '/peer-intel' },
-      { title: 'AI Chat', description: 'A placeholder route for the guided helper flow.', path: '/ai-chat' },
+      { title: 'Peer Intel', description: 'Veteran notes and practical tips organised by vocation and intake.', path: '/peer-intel' },
+      { title: 'AI Chat', description: 'Guided answers for enlistment, admin, training, and medical questions.', path: '/ai-chat' },
     ],
   },
   serve: {
     title: 'Serve Dashboard',
     description: 'Track progress, reflect, and keep platoon support tools in one place.',
     features: [
-      { title: 'Fitness Prep', description: 'IPPT logs live in AppContext and can be extended from this route.', path: '/fitness-prep' },
-      { title: 'Journal', description: 'Daily reflections backed by the shared journal entries array.', path: '/journal' },
-      { title: 'Buddy Tap', description: 'Peer support check-ins tied to the platoon sample data.', path: '/buddy-tap' },
-      { title: 'Peer Support Wall', description: 'Anonymous-style support posts stored in the shared wall state.', path: '/peer-support' },
-      { title: 'Train', description: 'Training feed seeded from the mock data source.', path: '/train' },
-      { title: 'Weekend Planner', description: 'A simple route for weekend prep and reset planning.', path: '/weekend-planner' },
+      { title: 'Fitness Prep', description: 'IPPT preparation and route planning calibrated to your service profile.', path: '/fitness-prep' },
+      { title: 'Journal', description: 'Private nightly reflections with a trend graph only you can see.', path: '/journal' },
+      { title: 'Buddy Tap', description: 'Anonymous concern check-ins that help cover a mate early.', path: '/buddy-tap' },
+      { title: 'Peer Support Wall', description: 'Support posts by phase and topic with resources surfaced before posting.', path: '/peer-support' },
+      { title: 'Train', description: 'IPPT attempts, personal bests, award bands, and platoon training activity.', path: '/train' },
+      { title: 'Weekend Planner', description: 'Two-day service-prep plans shaped around your IPPT target and vocation.', path: '/weekend-planner' },
     ],
   },
 };

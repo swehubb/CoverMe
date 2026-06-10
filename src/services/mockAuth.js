@@ -1,12 +1,13 @@
-import mockUser from '../data/mockUser';
+import { getDemoAccount, getDemoAccountByUid } from '../data/mockAccounts';
 
-export function login() {
+export function login(accountIdOrUid) {
   return new Promise((resolve) => {
     setTimeout(() => {
+      const account = getDemoAccountByUid(accountIdOrUid) || getDemoAccount(accountIdOrUid);
       resolve({
         success: true,
         token: `mock-jwt-token-${Date.now()}`,
-        user: { ...mockUser },
+        user: { ...account },
       });
     }, 800);
   });

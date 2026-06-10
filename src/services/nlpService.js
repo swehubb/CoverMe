@@ -110,4 +110,32 @@ export async function trendNarrative(scores) {
   }
 }
 
-export default { analyze, moderate, moderateBuddy, companion, trendNarrative };
+// getWeekendPlan({ pesStatus, vocation, ipptGoal, currentScore, currentAward, attempts, swimAttempts })
+// -> { ippt: { summary, days }, swim: { summary, days } } | null on failure
+export async function getWeekendPlan(payload) {
+  try {
+    const data = await postJSON('/api/weekend-plan', payload);
+    if (!data?.ippt?.days?.length || !data?.swim?.days?.length) throw new Error('Invalid shape');
+    return data;
+  } catch (err) {
+    console.warn('[nlpService.getWeekendPlan] fallback:', err.message);
+    return null;
+  }
+}
+
+// recommendWorkout({ pes, goal, intake, recentLogs }) -> { useDefault: false, days } | { useDefault: true }
+// intake: baseline + preferences ({ pushups, situps, runMmss, sessionMinutes, daysPerWeek }).
+// recentLogs: up to the last 5 completed sessions. Always resolves — never throws —
+// so the workout screen can fall back to the local PES default template on any failure.
+export async function recommendWorkout({ pes, goal, intake = null, recentLogs = [] }) {
+  try {
+    const data = await postJSON('/api/recommend-workout', { pes, goal, intake, recentLogs });
+    if (data?.useDefault || !data?.days) return { useDefault: true };
+    return { useDefault: false, days: data.days };
+  } catch (err) {
+    console.warn('[nlpService.recommendWorkout] fallback:', err.message);
+    return { useDefault: true };
+  }
+}
+
+export default { analyze, moderate, moderateBuddy, companion, trendNarrative, getWeekendPlan, recommendWorkout };

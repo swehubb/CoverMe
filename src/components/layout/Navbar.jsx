@@ -75,7 +75,7 @@ export default function Navbar({ profile, onModuleChange, onSignOut }) {
           <div className="nav-route">
             <span className="nav-route-mark">◢</span>
             <strong>{title}</strong>
-            <span className="nav-branch-badge">LAND FORCE</span>
+            <span className="nav-branch-badge">LAND</span>
           </div>
           <nav className="nav-actions" aria-label="Module and profile navigation">
             <div className="module-toggle nav-module-toggle" role="tablist" aria-label="Module switch">
