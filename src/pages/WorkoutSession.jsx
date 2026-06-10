@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import Panel from '../components/ui/Panel';
-import { formatExerciseDetail, isRunExercise } from '../data/workoutLibrary';
+import { formatExerciseDetail, isRunExercise, weekdayOf } from '../data/workoutLibrary';
 
 function buildRows(exercises) {
   return exercises.map((ex) => {
@@ -32,13 +32,17 @@ function fmtTime(totalSeconds) {
 }
 
 export default function WorkoutSession({ state, updateState }) {
-  const { day } = useParams();
+  const { date } = useParams();
   const navigate = useNavigate();
 
-  const weekPlan = state.workout?.weekPlan || null;
-  const dayPlan = weekPlan?.days?.[day] || null;
+  // The scheduled date drives which weekday template this session uses.
+  const sessionDate = useMemo(() => new Date(`${date}T00:00:00`), [date]);
+  const day = Number.isNaN(sessionDate.getTime()) ? null : weekdayOf(sessionDate);
+
+  const plan = state.workout?.plan || null;
+  const dayPlan = day ? plan?.weekTemplate?.[day] || null : null;
   const exercises = dayPlan?.exercises || [];
-  const valid = Boolean(weekPlan && dayPlan && exercises.length);
+  const valid = Boolean(plan && dayPlan && exercises.length);
 
   const [rows, setRows] = useState(() => (valid ? buildRows(exercises) : []));
   const [seconds, setSeconds] = useState(0);

@@ -131,7 +131,8 @@ const defaultState = {
   },
   workout: {
     logs: [],
-    weekPlan: null,
+    intake: null,
+    plan: null,
   },
   ui: {
     activeModule: '',
@@ -405,7 +406,7 @@ function AppShell({ state, updateState }) {
             />
             <Route path="/fitness-prep" element={<FitnessPrepPage state={state} />} />
             <Route path="/enlist/workout" element={<PreEnlistmentWorkout state={state} updateState={updateState} />} />
-            <Route path="/enlist/workout-session/:day" element={<WorkoutSession state={state} updateState={updateState} />} />
+            <Route path="/enlist/workout-session/:date" element={<WorkoutSession state={state} updateState={updateState} />} />
             <Route path="/ai-chat" element={<AiChatPage />} />
             <Route path="/peer-intel" element={<PeerIntelPage state={state} />} />
             <Route path="/peer-support" element={<PeerSupportWallScreen state={state} updateState={updateState} />} />

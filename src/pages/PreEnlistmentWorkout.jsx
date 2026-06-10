@@ -4,16 +4,19 @@ import Panel from '../components/ui/Panel';
 import nlpService from '../services/nlpService';
 import {
   DAYS,
-  buildDefaultWeekPlan,
+  buildDefaultPlan,
   formatExerciseDetail,
+  isRestTemplateDay,
   isRunExercise,
   sanitisePlanExercises,
+  weekdayOf,
 } from '../data/workoutLibrary';
 
-const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const STREAK_WEEKS = 12;
+const QUEUE_HORIZON_DAYS = 28; // how far ahead to project the dated queue
+const QUEUE_VISIBLE = 6; // how many upcoming sessions to show
 
-// ---- local date helpers (kept self-contained to this screen) ----------------
+// ---- local date helpers -----------------------------------------------------
 function localKey(date) {
   const d = date instanceof Date ? date : new Date(date);
   const y = d.getFullYear();
@@ -27,8 +30,7 @@ function startOfToday() {
 }
 function startOfWeekMonday(date) {
   const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-  const offset = (d.getDay() + 6) % 7; // days since Monday
-  d.setDate(d.getDate() - offset);
+  d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
   return d;
 }
 function addDays(date, n) {
@@ -43,93 +45,107 @@ function totalSets(log) {
   if (!Array.isArray(log?.exercises)) return 0;
   return log.exercises.reduce((sum, ex) => sum + (Array.isArray(ex.sets) ? ex.sets.length : 0), 0);
 }
+function mmss(totalSeconds) {
+  if (!Number.isFinite(totalSeconds)) return '';
+  return `${Math.floor(totalSeconds / 60)}:${`${totalSeconds % 60}`.padStart(2, '0')}`;
+}
+function dateLabel(date, today) {
+  const diff = Math.round((date - today) / 86400000);
+  if (diff === 0) return 'TODAY';
+  if (diff === 1) return 'TOMORROW';
+  return date.toLocaleDateString('en-SG', { weekday: 'short', day: 'numeric', month: 'short' }).toUpperCase();
+}
 
-// Normalises an AI plan's days into the canonical shape, dropping off-library
-// exercises and forcing every day (incl. Sunday rest) to exist.
 function normaliseDays(rawDays) {
   const days = {};
   DAYS.forEach((day) => {
     const entry = rawDays?.[day];
-    const exercises = day === 'Sunday' ? [] : sanitisePlanExercises(entry?.exercises);
+    const exercises = sanitisePlanExercises(entry?.exercises);
     days[day] = {
-      focus: day === 'Sunday' ? 'Rest' : entry?.focus || (exercises.length ? 'Training' : 'Rest'),
+      focus: exercises.length ? entry?.focus || 'Training' : 'Rest',
       exercises,
     };
   });
   return days;
 }
 
-function isRestDay(dayPlan) {
-  return !dayPlan || !dayPlan.exercises || dayPlan.exercises.length === 0 || /rest/i.test(dayPlan.focus || '');
-}
-
 export default function PreEnlistmentWorkout({ state, updateState }) {
   const navigate = useNavigate();
   const pes = state.auth.profile?.pesStatus || 'B1';
+  const goal = state.onboarding?.ipptGoal || 'Pass';
 
+  const intake = state.workout?.intake || null;
+  const plan = state.workout?.plan || null;
   const logs = state.workout?.logs || [];
-  const weekPlan = state.workout?.weekPlan || null;
 
   const [generating, setGenerating] = useState(false);
-  const [expandedDay, setExpandedDay] = useState(null);
+  const [editingIntake, setEditingIntake] = useState(false);
+  const [expandedKey, setExpandedKey] = useState(null);
   const [expandedLog, setExpandedLog] = useState(null);
 
   const completedLogs = useMemo(() => logs.filter(isCompletedLog), [logs]);
   const lastCompletedDate = completedLogs.length ? completedLogs[completedLogs.length - 1].date : null;
 
-  const setWeekPlan = (plan) =>
-    updateState((current) => ({ ...current, workout: { ...current.workout, weekPlan: plan } }));
+  const setIntake = (values) =>
+    updateState((current) => ({ ...current, workout: { ...current.workout, intake: values } }));
+  const setPlan = (next) =>
+    updateState((current) => ({ ...current, workout: { ...current.workout, plan: next } }));
 
-  // Build / refresh the plan. Regenerates only when there is no plan yet, or when a
-  // workout was completed after the current plan was generated. Renders immediately
-  // with whatever plan exists; the AI call (history only) updates in the background.
+  // Build / refresh the weekly template. Runs once an intake exists, and again
+  // whenever a workout is completed after the current plan was generated — so the
+  // progressive overload only ever lands on FUTURE dated sessions, never the one
+  // just finished (which has already dropped into history).
   useEffect(() => {
-    const needsPlan = !weekPlan;
-    const stale =
-      weekPlan && lastCompletedDate && new Date(lastCompletedDate) > new Date(weekPlan.generatedAt);
+    if (!intake) return undefined;
+    const needsPlan = !plan;
+    const stale = plan && lastCompletedDate && new Date(lastCompletedDate) > new Date(plan.generatedAt);
     if (!needsPlan && !stale) return undefined;
-
-    if (completedLogs.length === 0) {
-      setWeekPlan(buildDefaultWeekPlan(pes));
-      return undefined;
-    }
 
     let active = true;
     setGenerating(true);
-    nlpService.recommendWorkout(pes, completedLogs.slice(-5)).then((res) => {
-      if (!active) return;
-      setGenerating(false);
-      if (!res || res.useDefault) {
-        setWeekPlan(buildDefaultWeekPlan(pes));
-      } else {
-        setWeekPlan({ generatedAt: new Date().toISOString(), days: normaliseDays(res.days) });
-      }
-    });
+    nlpService
+      .recommendWorkout({ pes, goal, intake, recentLogs: completedLogs.slice(-5) })
+      .then((res) => {
+        if (!active) return;
+        setGenerating(false);
+        if (!res || res.useDefault) setPlan(buildDefaultPlan(pes));
+        else setPlan({ generatedAt: new Date().toISOString(), weekTemplate: normaliseDays(res.days) });
+      });
     return () => {
       active = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pes, lastCompletedDate, weekPlan?.generatedAt, completedLogs.length]);
+  }, [intake, pes, goal, lastCompletedDate, plan?.generatedAt]);
 
   const today = startOfToday();
-  const todayName = DAY_NAMES[today.getDay()];
-  const weekStart = startOfWeekMonday(today);
-  const weekEnd = addDays(weekStart, 6);
+  const todayKey = localKey(today);
 
-  // Which weekday names have a completed (non-discarded) log within the CURRENT week.
-  const completedDaysThisWeek = useMemo(() => {
-    const set = new Set();
-    completedLogs.forEach((log) => {
-      const d = new Date(log.date);
-      const day = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-      if (day >= weekStart && day <= weekEnd) set.add(log.day);
-    });
-    return set;
+  const completedDates = useMemo(
+    () => new Set(completedLogs.map((log) => localKey(log.date))),
+    [completedLogs],
+  );
+
+  // Project the weekly template forward into dated sessions, skipping rest days
+  // and any date already completed.
+  const queue = useMemo(() => {
+    if (!plan?.weekTemplate) return [];
+    const out = [];
+    for (let i = 0; i < QUEUE_HORIZON_DAYS && out.length < QUEUE_VISIBLE; i += 1) {
+      const date = addDays(today, i);
+      const key = localKey(date);
+      if (completedDates.has(key)) continue;
+      const dayPlan = plan.weekTemplate[weekdayOf(date)];
+      if (isRestTemplateDay(dayPlan)) continue;
+      out.push({ key, date, weekday: weekdayOf(date), focus: dayPlan.focus, exercises: dayPlan.exercises, isToday: key === todayKey });
+    }
+    return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [completedLogs, weekStart.getTime()]);
+  }, [plan?.generatedAt, plan?.weekTemplate, completedDates, todayKey]);
 
-  // Per-day status map for the streak calendar: 'full' (completed), 'partial'
-  // (only a discarded/incomplete attempt), or absent.
+  const todayIsTrainingDay = plan?.weekTemplate && !isRestTemplateDay(plan.weekTemplate[weekdayOf(today)]);
+  const todayDone = completedDates.has(todayKey);
+
+  // streak + calendar (date-based)
   const dayStatus = useMemo(() => {
     const map = new Map();
     logs.forEach((log) => {
@@ -139,12 +155,28 @@ export default function PreEnlistmentWorkout({ state, updateState }) {
     });
     return map;
   }, [logs]);
-
-  const { currentStreak, longestStreak } = useMemo(() => computeStreaks(dayStatus, today), [dayStatus, today.getTime()]);
-
+  const weekStart = startOfWeekMonday(today);
+  const { currentStreak, longestStreak } = useMemo(() => computeStreaks(dayStatus, today), [dayStatus, todayKey]);
   const calendarWeeks = useMemo(() => buildCalendar(dayStatus, weekStart), [dayStatus, weekStart.getTime()]);
-
   const history = useMemo(() => [...completedLogs].reverse(), [completedLogs]);
+
+  // ── Intake gate ─────────────────────────────────────────────
+  if (!intake || editingIntake) {
+    return (
+      <IntakeForm
+        pes={pes}
+        goal={goal}
+        latestAttempt={state.ippt?.attempts?.[state.ippt.attempts.length - 1] || null}
+        initial={intake}
+        onCancel={intake ? () => setEditingIntake(false) : null}
+        onSubmit={(values) => {
+          setIntake(values);
+          setPlan(null); // force a fresh AI build from the new inputs
+          setEditingIntake(false);
+        }}
+      />
+    );
+  }
 
   return (
     <div className="wk-page scroll">
@@ -152,65 +184,69 @@ export default function PreEnlistmentWorkout({ state, updateState }) {
         <div className="label" style={{ color: 'var(--accent-text)', marginBottom: 8 }}>▲ ENLIST · PRE-ENLISTMENT CONDITIONING</div>
         <h1 className="h-display wk-title">PRE-ENLISTMENT WORKOUT</h1>
         <p className="wk-sub">
-          Calibrated to <span className="wk-pes">{pes}</span>. Plan adapts with progressive overload each time you finish a session.
+          Tuned to <span className="wk-pes">{pes}</span> · goal <span className="wk-pes">{goal.toUpperCase()}</span> · {intake.daysPerWeek}×/week · {intake.sessionMinutes} min. Plan adapts forward with progressive overload as you log sessions.
         </p>
       </div>
 
-      {/* ── SECTION A — WEEKLY PLAN ───────────────────────────── */}
+      {/* ── SECTION A — UP NEXT (rolling dated queue) ─────────── */}
       <section className="wk-section">
         <div className="wk-section-head">
-          <span className="label">▲ THIS WEEK'S PLAN</span>
-          {generating && <span className="mono-dim wk-generating"><span className="blink">●</span> BUILDING YOUR PLAN…</span>}
+          <span className="label">▲ UP NEXT</span>
+          <div className="wk-section-tools">
+            {generating && <span className="mono-dim wk-generating"><span className="blink">●</span> BUILDING YOUR PLAN…</span>}
+            <button className="wk-link-btn" onClick={() => setEditingIntake(true)}>ADJUST INPUTS</button>
+          </div>
         </div>
 
-        {!weekPlan ? (
-          <Panel className="wk-empty"><p className="mono-dim">Building your plan…</p></Panel>
+        {!plan ? (
+          <Panel className="wk-empty"><p className="mono-dim">Building your plan from your inputs…</p></Panel>
         ) : (
-          <div className="wk-day-row">
-            {DAYS.map((day) => {
-              const dayPlan = weekPlan.days?.[day];
-              const rest = isRestDay(dayPlan);
-              const isToday = day === todayName;
-              const done = completedDaysThisWeek.has(day);
-              const expanded = expandedDay === day;
-              return (
-                <Panel
-                  key={day}
-                  className={`wk-day-card${isToday ? ' is-today' : ''}${rest ? ' is-rest' : ''}`}
-                >
-                  <div className="wk-day-top">
-                    <div>
-                      <div className="wk-day-name h-title">{day.slice(0, 3)}{isToday && <span className="wk-today-tag">TODAY</span>}</div>
-                      <div className="wk-day-focus mono-dim">{rest ? 'REST' : (dayPlan.focus || '').toUpperCase()}</div>
-                    </div>
-                    {done && <span className="wk-check" title="Completed this week">✓</span>}
-                  </div>
-
-                  {!rest && (
-                    <>
+          <>
+            {todayIsTrainingDay && todayDone && (
+              <Panel flush className="wk-today-done"><span className="wk-check sm">✓</span> Today's session is logged. Next up below.</Panel>
+            )}
+            {queue.length === 0 ? (
+              <Panel className="wk-empty"><p className="mono-dim">Rest day — nothing scheduled. Enjoy the recovery.</p></Panel>
+            ) : (
+              <div className="wk-q-row">
+                {queue.map((session) => {
+                  const expanded = expandedKey === session.key;
+                  const startable = session.isToday;
+                  return (
+                    <Panel key={session.key} className={`wk-q-card${session.isToday ? ' is-today' : ''}`}>
+                      <div className="wk-q-top">
+                        <div>
+                          <div className="wk-q-date h-title">{dateLabel(session.date, today)}</div>
+                          <div className="wk-q-focus mono-dim">{(session.focus || '').toUpperCase()}</div>
+                        </div>
+                        {session.isToday && <span className="wk-today-tag">TODAY</span>}
+                      </div>
                       <ul className="wk-ex-list">
-                        {(expanded ? dayPlan.exercises : dayPlan.exercises.slice(0, 3)).map((ex, i) => (
+                        {(expanded ? session.exercises : session.exercises.slice(0, 3)).map((ex, i) => (
                           <li key={`${ex.name}-${i}`}>
                             <span className="wk-ex-name">{ex.name}</span>
                             <span className="wk-ex-detail mono">{formatExerciseDetail(ex)}</span>
                           </li>
                         ))}
                       </ul>
-                      {dayPlan.exercises.length > 3 && (
-                        <button className="wk-expand" onClick={() => setExpandedDay(expanded ? null : day)}>
-                          {expanded ? '▲ less' : `▾ ${dayPlan.exercises.length - 3} more`}
+                      {session.exercises.length > 3 && (
+                        <button className="wk-expand" onClick={() => setExpandedKey(expanded ? null : session.key)}>
+                          {expanded ? '▲ less' : `▾ ${session.exercises.length - 3} more`}
                         </button>
                       )}
-                      <button className="btn sm full wk-start" onClick={() => navigate(`/enlist/workout-session/${day}`)}>
-                        START WORKOUT
-                      </button>
-                    </>
-                  )}
-                  {rest && <div className="wk-rest-note mono-dim">Recovery · no session</div>}
-                </Panel>
-              );
-            })}
-          </div>
+                      {startable ? (
+                        <button className="btn sm full wk-start" onClick={() => navigate(`/enlist/workout-session/${session.key}`)}>
+                          START WORKOUT
+                        </button>
+                      ) : (
+                        <div className="wk-q-scheduled mono-dim">SCHEDULED · {session.weekday.slice(0, 3).toUpperCase()}</div>
+                      )}
+                    </Panel>
+                  );
+                })}
+              </div>
+            )}
+          </>
         )}
       </section>
 
@@ -306,23 +342,105 @@ export default function PreEnlistmentWorkout({ state, updateState }) {
   );
 }
 
-// Current streak = consecutive completed days ending today or yesterday.
-// Longest streak = longest run of consecutive completed days ever.
-function computeStreaks(dayStatus, today) {
-  const completedKeys = new Set(
-    [...dayStatus.entries()].filter(([, status]) => status === 'full').map(([key]) => key),
+// ── Intake form ───────────────────────────────────────────────
+function IntakeForm({ pes, goal, latestAttempt, initial, onSubmit, onCancel }) {
+  const [pushups, setPushups] = useState(
+    initial?.pushups != null ? String(initial.pushups) : latestAttempt?.pushups != null ? String(latestAttempt.pushups) : '',
   );
+  const [situps, setSitups] = useState(
+    initial?.situps != null ? String(initial.situps) : latestAttempt?.situps != null ? String(latestAttempt.situps) : '',
+  );
+  const [runMmss, setRunMmss] = useState(
+    initial?.runMmss || (latestAttempt?.runSeconds != null ? mmss(latestAttempt.runSeconds) : ''),
+  );
+  const [sessionMinutes, setSessionMinutes] = useState(String(initial?.sessionMinutes ?? 45));
+  const [daysPerWeek, setDaysPerWeek] = useState(String(initial?.daysPerWeek ?? 4));
+  const [error, setError] = useState('');
 
-  // current
+  const submit = () => {
+    const runOk = /^\d{1,2}:[0-5]\d$/.test(runMmss.trim());
+    if (pushups === '' || situps === '' || !runOk) {
+      setError('Enter your push-ups, sit-ups, and a valid 2.4km time (mm:ss, e.g. 11:30).');
+      return;
+    }
+    onSubmit({
+      pushups: Number(pushups),
+      situps: Number(situps),
+      runMmss: runMmss.trim(),
+      sessionMinutes: Number(sessionMinutes),
+      daysPerWeek: Number(daysPerWeek),
+      completedAt: new Date().toISOString(),
+    });
+  };
+
+  return (
+    <div className="wk-page scroll">
+      <div className="wk-head">
+        <div className="label" style={{ color: 'var(--accent-text)', marginBottom: 8 }}>▲ ENLIST · PRE-ENLISTMENT CONDITIONING</div>
+        <h1 className="h-display wk-title">{initial ? 'ADJUST YOUR INPUTS' : 'SET UP YOUR PLAN'}</h1>
+        <p className="wk-sub">
+          A few numbers so the AI can craft a plan for your <span className="wk-pes">{pes}</span> status and <span className="wk-pes">{goal.toUpperCase()}</span> goal. It refines forward every time you log a session.
+        </p>
+      </div>
+
+      <Panel ticks className="wk-intake-card">
+        <div className="label" style={{ marginBottom: 14 }}>▲ CURRENT BASELINE</div>
+        <div className="wk-intake-grid">
+          <div className="field">
+            <span className="stat-label">PUSH-UPS IN 60S</span>
+            <input className="inp" type="number" inputMode="numeric" value={pushups} onChange={(e) => setPushups(e.target.value)} placeholder="e.g. 38" />
+          </div>
+          <div className="field">
+            <span className="stat-label">SIT-UPS IN 60S</span>
+            <input className="inp" type="number" inputMode="numeric" value={situps} onChange={(e) => setSitups(e.target.value)} placeholder="e.g. 41" />
+          </div>
+          <div className="field">
+            <span className="stat-label">2.4KM RUN (MM:SS)</span>
+            <input className="inp" type="text" value={runMmss} onChange={(e) => setRunMmss(e.target.value)} placeholder="e.g. 11:30" />
+          </div>
+        </div>
+
+        <div className="label" style={{ margin: '22px 0 14px' }}>▲ TRAINING PREFERENCES</div>
+        <div className="wk-intake-grid">
+          <div className="field">
+            <span className="stat-label">MINUTES PER SESSION</span>
+            <select className="inp" value={sessionMinutes} onChange={(e) => setSessionMinutes(e.target.value)}>
+              {[20, 30, 45, 60, 75, 90].map((m) => <option key={m} value={m}>{m} min</option>)}
+            </select>
+          </div>
+          <div className="field">
+            <span className="stat-label">SESSIONS PER WEEK</span>
+            <select className="inp" value={daysPerWeek} onChange={(e) => setDaysPerWeek(e.target.value)}>
+              {[2, 3, 4, 5, 6].map((d) => <option key={d} value={d}>{d} days</option>)}
+            </select>
+          </div>
+          <div className="field">
+            <span className="stat-label">IPPT GOAL</span>
+            <input className="inp" type="text" value={goal} disabled />
+          </div>
+        </div>
+
+        {error && <p className="wk-intake-error">{error}</p>}
+
+        <div className="wk-intake-actions">
+          {onCancel && <button className="btn neutral" onClick={onCancel}>CANCEL</button>}
+          <button className="btn" onClick={submit}>{initial ? 'REBUILD PLAN' : 'BUILD MY PLAN'}</button>
+        </div>
+      </Panel>
+    </div>
+  );
+}
+
+// Current streak = consecutive completed days ending today or yesterday.
+function computeStreaks(dayStatus, today) {
+  const completedKeys = new Set([...dayStatus.entries()].filter(([, s]) => s === 'full').map(([k]) => k));
   let current = 0;
   const cursor = new Date(today);
-  if (!completedKeys.has(localKey(cursor))) cursor.setDate(cursor.getDate() - 1); // allow today-not-yet-done
+  if (!completedKeys.has(localKey(cursor))) cursor.setDate(cursor.getDate() - 1);
   while (completedKeys.has(localKey(cursor))) {
     current += 1;
     cursor.setDate(cursor.getDate() - 1);
   }
-
-  // longest
   const sorted = [...completedKeys].sort();
   let longest = 0;
   let run = 0;
@@ -334,11 +452,10 @@ function computeStreaks(dayStatus, today) {
     longest = Math.max(longest, run);
     prev = d;
   });
-
   return { currentStreak: current, longestStreak: longest };
 }
 
-// 12 week rows (oldest → newest), each Monday→Sunday, ending on the current week.
+// 12 week rows (oldest → newest), Monday→Sunday, ending on the current week.
 function buildCalendar(dayStatus, weekStart) {
   const today = startOfToday();
   const firstMonday = addDays(weekStart, -(STREAK_WEEKS - 1) * 7);
@@ -348,12 +465,7 @@ function buildCalendar(dayStatus, weekStart) {
     for (let d = 0; d < 7; d += 1) {
       const date = addDays(firstMonday, w * 7 + d);
       const key = localKey(date);
-      row.push({
-        key,
-        status: dayStatus.get(key) || 'none',
-        isToday: key === localKey(today),
-        isFuture: date > today,
-      });
+      row.push({ key, status: dayStatus.get(key) || 'none', isToday: key === localKey(today), isFuture: date > today });
     }
     weeks.push(row);
   }
