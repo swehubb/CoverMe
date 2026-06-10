@@ -50,6 +50,10 @@ import WorkoutSession from './pages/WorkoutSession';
 import AiChatPage from './pages/AiChatPage';
 import PeerIntelPage from './pages/PeerIntelPage';
 import StravaConnect from './components/serve/StravaConnect';
+import armyOperator from './assets/operators/army-operator.png';
+import navyOperator from './assets/operators/navy-operator.png';
+import airforceOperator from './assets/operators/airforce-operator.png';
+import disOperator from './assets/operators/dis-operator.png';
 
 ChartJS.register(CategoryScale, LinearScale, LineElement, PointElement, Tooltip, Filler);
 
