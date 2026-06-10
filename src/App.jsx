@@ -559,7 +559,7 @@ function HomeDashboard({ state, updateState, phase, activeModule }) {
       {/* Identity + ORD hero */}
       <Panel ticks elevated style={{ padding: 26, display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 30, alignItems: 'center', marginBottom: 16 }}>
         <div>
-          <span className="label" style={{ color: 'var(--accent-text)', marginBottom: 12 }}>▲ ACTIVE SERVICE COMMAND</span>
+          <span className="label" style={{ color: 'var(--accent-text)', marginBottom: 12 }}>ACTIVE SERVICE</span>
           <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
             <div style={{ width: 52, height: 52, borderRadius: 8, background: 'var(--accent-soft)', border: '1px solid var(--accent-line)', display: 'grid', placeItems: 'center', color: 'var(--accent-text)' }}>
               <Insignia branch={state.ui?.branch || 'army'} size={28} />
@@ -573,7 +573,7 @@ function HomeDashboard({ state, updateState, phase, activeModule }) {
           </div>
         </div>
         <div style={{ borderLeft: '1px solid var(--border)', paddingLeft: 30 }}>
-          <span className="label" style={{ marginBottom: 8 }}>▲ ORD COUNTDOWN</span>
+          <span className="label" style={{ marginBottom: 8 }}>ORD COUNTDOWN</span>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
             <span className="stat-val" style={{ fontSize: 56, color: 'var(--amber)' }}>{ordDays}</span>
             <span className="mono" style={{ color: 'var(--text-dim)', fontSize: 14 }}>DAYS REMAINING</span>
@@ -597,6 +597,15 @@ function HomeDashboard({ state, updateState, phase, activeModule }) {
         </div>
       </Panel>
 
+      <span className="label" style={{ margin: '30px 0 14px', display: 'block' }}>MODULE DECK</span>
+      <div className="dash-features-grid">
+        {moduleContent.detailBlocks.map((block) => (
+          <button key={block.title} className="feat-card" onClick={() => navigate(block.to)}>
+            <Panel className="feat-card-inner" style={{ gap: 0 }}>
+              <div style={{ marginTop: 'auto' }}>
+                <div className="h-title" style={{ fontSize: 18, marginBottom: 8 }}>{block.title}</div>
+                <div className="feature-card-copy" style={{ color: 'var(--text-dim)', fontSize: 14, lineHeight: 1.55, marginBottom: 14 }}>{block.body}</div>
+                <span className="feat-card-arrow">Open →</span>
       {outreachPrompt && (
         <Panel ticks className="support-outreach-panel" style={{ marginBottom: 16, padding: 22 }}>
           <div>
@@ -1611,7 +1620,7 @@ function TrainScreen({ state, updateState }) {
       {/* Row 1: 2-column overview */}
       <div style={{ display: 'grid', gridTemplateColumns: '1.1fr 1.4fr', gap: 16, marginBottom: 16 }}>
         <Panel ticks style={{ padding: 26 }}>
-          <span className="label" style={{ marginBottom: 18, display: 'block' }}>▲ CURRENT STANDING</span>
+          <span className="label" style={{ marginBottom: 18, display: 'block' }}>CURRENT STANDING</span>
           <div style={{ fontFamily: 'var(--font-head)', fontWeight: 900, fontSize: 76, lineHeight: 1, color: 'var(--amber)', marginBottom: 14 }}>
             {latestScore ? latestScore.score : '—'}
           </div>
@@ -1624,7 +1633,7 @@ function TrainScreen({ state, updateState }) {
             <div style={{ height: 6, background: 'var(--bg)', borderRadius: 3, overflow: 'hidden' }}>
               <div style={{ width: `${Math.min(100, ((latestScore?.score ?? 0) / goalScore) * 100)}%`, height: '100%', background: 'var(--amber)', borderRadius: 3, transition: 'width 0.4s ease' }} />
             </div>
-            <div className="mono-dim" style={{ marginTop: 6, textAlign: 'right', fontSize: 10 }}>
+            <div className="mono-dim" style={{ marginTop: 6, textAlign: 'right' }}>
               {latestScore ? `${latestScore.score} / ${goalScore}` : `0 / ${goalScore}`}
             </div>
           </div>
@@ -1658,14 +1667,16 @@ function TrainScreen({ state, updateState }) {
           {stationRows.map((s) => (
             <div key={s.label} style={{ marginBottom: 18 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 5 }}>
-                <span className="label" style={{ fontSize: 10 }}>{s.label}</span>
-                <span style={{ fontFamily: 'var(--font-mono)', fontSize: 22, color: 'var(--amber)', fontVariantNumeric: 'tabular-nums' }}>{s.val ?? '—'}</span>
+                <span className="label">{s.label}</span>
+                <span style={{ fontFamily: 'var(--font-mono)', fontSize: 22, color: 'var(--amber)', fontVariantNumeric: 'tabular-nums' }}>
+                  {s.val ?? '—'}
+                </span>
               </div>
               <div style={{ height: 4, background: 'var(--bg)', borderRadius: 2, overflow: 'hidden' }}>
                 <div style={{ width: `${s.pts != null ? (s.pts / s.max) * 100 : 0}%`, height: '100%', background: 'var(--amber)', borderRadius: 2 }} />
               </div>
-              <div className="mono-dim" style={{ fontSize: 10, marginTop: 3 }}>
-                {s.pts != null ? `${s.pts} / ${s.max} PTS` : '—'}
+              <div className="mono-dim" style={{ marginTop: 3 }}>
+                {s.pts != null ? `${s.pts} / ${s.max} pts` : '—'}
               </div>
             </div>
           ))}
@@ -1692,7 +1703,7 @@ function TrainScreen({ state, updateState }) {
 
       {/* SCORE PROGRESSION */}
       <Panel ticks style={{ padding: 26, marginBottom: 16 }}>
-        <span className="label" style={{ marginBottom: 16, display: 'block' }}>▲ IPPT SCORE PROGRESSION</span>
+        <span className="label" style={{ marginBottom: 16, display: 'block' }}>IPPT SCORE PROGRESSION</span>
         {chartSeries.length > 0 ? (
           <>
             <SvgLineChart
@@ -2603,8 +2614,7 @@ function JournalScreen({ state, updateState }) {
       {/* Header + Streak */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 24 }}>
         <div>
-          <span className="label" style={{ color: 'var(--accent-text)', marginBottom: 8 }}>▲ MODULE 13 · WELLNESS LAYER</span>
-          <h1 className="h-display" style={{ fontSize: 52 }}>SENTINEL</h1>
+          <h1 className="h-display" style={{ fontSize: 48 }}>SENTINEL</h1>
         </div>
         <Panel flush style={{ padding: '12px 20px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -2619,7 +2629,7 @@ function JournalScreen({ state, updateState }) {
       <div className="sentinel-grid" style={{ marginBottom: 24 }}>
         {/* Left — prompt + entry */}
         <Panel ticks style={{ padding: 24 }}>
-          <span className="label" style={{ marginBottom: 12 }}>▲ TONIGHT'S REFLECTION</span>
+          <span className="label" style={{ marginBottom: 12 }}>TONIGHT'S REFLECTION</span>
           <p style={{ fontFamily: 'var(--font-head)', fontWeight: 700, fontSize: 26, lineHeight: 1.15, marginBottom: 18 }}>{prompt}</p>
           <textarea
             className="journal-textarea"
@@ -2638,7 +2648,7 @@ function JournalScreen({ state, updateState }) {
         {/* Right — trend chart */}
         <Panel ticks style={{ padding: '22px 24px 16px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10 }}>
-            <span className="label">▲ YOUR EMOTIONAL TREND · {entries.length} NIGHTS</span>
+            <span className="label">EMOTIONAL TREND · {entries.length} NIGHTS</span>
             <span className="mono-dim" style={{ color: declining ? 'var(--danger)' : 'var(--success)' }}>
               {declining ? '▼ DECLINING' : '▲ STABLE'}
             </span>
@@ -2667,7 +2677,7 @@ function JournalScreen({ state, updateState }) {
         </Panel>
       </div>
       {/* How Sentinel responds */}
-      <span className="label" style={{ margin: '30px 0 12px', display: 'block' }}>▲ HOW SENTINEL RESPONDS</span>
+      <span className="label" style={{ margin: '30px 0 12px', display: 'block' }}>HOW SENTINEL RESPONDS</span>
       <div style={{ display: 'grid', gridTemplateColumns: '1.25fr 1fr', gap: 16, marginBottom: 24 }}>
         <Panel ticks style={{ padding: 26 }}>
           {[
@@ -2702,7 +2712,7 @@ function JournalScreen({ state, updateState }) {
       </div>
 
       {/* Past reflections */}
-      <span className="label" style={{ margin: '0 0 12px', display: 'block' }}>▲ PAST REFLECTIONS</span>
+      <span className="label" style={{ margin: '0 0 12px', display: 'block' }}>PAST REFLECTIONS</span>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {allReflections.length === 0 ? (
           <div className="empty-state">No reflections yet. Your first entry will appear here.</div>
@@ -2745,7 +2755,7 @@ function JournalScreen({ state, updateState }) {
       {crisisState && (
         <div className="overlay-bg">
           <Panel elevated className="modal-card" style={{ borderColor: 'rgba(192,57,43,0.4)' }}>
-            <span className="label" style={{ color: '#d96055', marginBottom: 10 }}>▲ IMMEDIATE SUPPORT</span>
+            <span className="label" style={{ color: '#d96055', marginBottom: 10 }}>IMMEDIATE SUPPORT</span>
             <h2 className="h-title" style={{ fontSize: 32, marginBottom: 14 }}>YOU DON'T HAVE TO CARRY THIS ALONE.</h2>
             <p style={{ color: 'var(--text-dim)', lineHeight: 1.6, marginBottom: 24 }}>
               What you wrote matters. These lines are confidential and reach people trained to help right now.{' '}
@@ -3297,8 +3307,8 @@ function ProfileScreen({ state, updateState, activeModule }) {
             <div style={{ fontFamily: 'var(--font-head)', fontWeight: 700, fontSize: 32, lineHeight: 1 }}>
               {profile.fullName.toUpperCase()}
             </div>
-            <div className="mono-dim" style={{ marginTop: 8, fontSize: 12.5 }}>
-              PES {profile.pesStatus} · {(profile.vocation || 'INFANTRY').toUpperCase()} · {profile.unit || '—'}
+            <div style={{ marginTop: 8, fontSize: 14, color: 'var(--text-dim)' }}>
+              PES {profile.pesStatus} · {(profile.vocation || 'Infantry').toUpperCase()} · {profile.unit || '—'}
             </div>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-end', flexShrink: 0 }}>
@@ -3386,7 +3396,7 @@ function ProfileScreen({ state, updateState, activeModule }) {
 
             <div style={{ height: 1, background: 'var(--border)', margin: '24px 0' }} />
 
-            <span className="label" style={{ marginBottom: 18, display: 'block' }}>▲ PRIVACY & WELLNESS</span>
+            <span className="label" style={{ marginBottom: 18, display: 'block' }}>PRIVACY & WELLNESS</span>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
               <SettingRow
                 title="Sentinel journal"
@@ -3422,8 +3432,8 @@ function ProfileScreen({ state, updateState, activeModule }) {
                     <div key={a.key} style={{ display: 'flex', gap: 14, alignItems: 'center' }}>
                       <BadgeMedal tier={a.tier} />
                       <div style={{ minWidth: 0 }}>
-                        <div style={{ fontFamily: 'var(--font-head)', fontWeight: 700, fontSize: 15 }}>{a.name}</div>
-                        <div className="mono-dim" style={{ fontSize: 11 }}>{a.desc}</div>
+                        <div style={{ fontFamily: 'var(--font-head)', fontWeight: 700, fontSize: 16 }}>{a.name}</div>
+                        <div style={{ fontSize: 13, color: 'var(--text-dim)', marginTop: 2 }}>{a.desc}</div>
                       </div>
                     </div>
                   ))}
@@ -3434,7 +3444,7 @@ function ProfileScreen({ state, updateState, activeModule }) {
             </Panel>
 
             <Panel style={{ padding: 28 }}>
-              <span className="label" style={{ marginBottom: 6, display: 'block' }}>▲ ACCOUNT</span>
+              <span className="label" style={{ marginBottom: 6, display: 'block' }}>ACCOUNT</span>
               <div className="mono-dim" style={{ marginBottom: 18, fontSize: 11 }}>
                 SIGNED IN VIA SINGPASS
               </div>
@@ -3451,8 +3461,8 @@ function SettingRow({ title, desc, on, onToggle }) {
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16 }}>
       <div>
-        <div style={{ fontFamily: 'var(--font-head)', fontWeight: 700, fontSize: 15, letterSpacing: '0.02em' }}>{title}</div>
-        <div style={{ color: 'var(--text-dim)', fontSize: 13, marginTop: 2 }}>{desc}</div>
+        <div style={{ fontSize: 15, fontWeight: 500 }}>{title}</div>
+        <div style={{ color: 'var(--text-dim)', fontSize: 13, marginTop: 3 }}>{desc}</div>
       </div>
       <button onClick={onToggle} disabled={!onToggle}
         style={{ all: 'unset', cursor: onToggle ? 'pointer' : 'default', flexShrink: 0,
@@ -3502,7 +3512,7 @@ function ScreenHeader({ eyebrow, title, subtitle }) {
   return (
     <header style={{ marginBottom: 24 }}>
       {eyebrow && <span className="label" style={{ color: 'var(--accent-text)', marginBottom: 8 }}>{eyebrow}</span>}
-      <h1 className="h-display" style={{ fontSize: 52 }}>{title}</h1>
+      <h1 className="h-display" style={{ fontSize: 48 }}>{title}</h1>
       {subtitle && <p style={{ color: 'var(--text-dim)', marginTop: 4 }}>{subtitle}</p>}
     </header>
   );
