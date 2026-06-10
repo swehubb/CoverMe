@@ -50,7 +50,7 @@ export default function EnlistDashboardPage({ state, updateState, phase }) {
       {/* Header */}
       <Panel ticks elevated style={{ padding: 26, display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 30, alignItems: 'center', marginBottom: 16 }}>
         <div>
-          <div className="label" style={{ color: 'var(--accent-text)', marginBottom: 12 }}>▲ ENLIST MODULE · ACTIVE SERVICE PREP</div>
+          <div className="label" style={{ color: 'var(--accent-text)', marginBottom: 12 }}>ENLIST MODULE · PRE-SERVICE PREP</div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
             <div style={{ width: 52, height: 52, borderRadius: 8, background: 'var(--accent-soft)', border: '1px solid var(--accent-line)', display: 'grid', placeItems: 'center', color: 'var(--accent-text)' }}>
               <Insignia branch={state.ui.branch || 'army'} size={28} />
@@ -66,7 +66,7 @@ export default function EnlistDashboardPage({ state, updateState, phase }) {
           </div>
         </div>
         <div style={{ borderLeft: '1px solid var(--border)', paddingLeft: 30 }}>
-          <div className="label" style={{ marginBottom: 8 }}>▲ ORD COUNTDOWN</div>
+          <div className="label" style={{ marginBottom: 8 }}>ORD COUNTDOWN</div>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
             <span className="stat-val" style={{ fontSize: 56, color: 'var(--amber)' }}>{ordDays}</span>
             <span className="mono" style={{ color: 'var(--text-dim)', fontSize: 14 }}>DAYS REMAINING</span>
@@ -92,21 +92,15 @@ export default function EnlistDashboardPage({ state, updateState, phase }) {
       </Panel>
 
       {/* Feature grid */}
-      <div className="label" style={{ margin: '30px 0 14px' }}>▲ MODULE DECK</div>
+      <div className="label" style={{ margin: '24px 0 12px' }}>MODULE DECK</div>
       <div className="dash-features-grid">
         {FEATURES.map((f) => (
           <button key={f.id} className="feat-card" onClick={() => navigate(f.path)}>
-            <Panel ticks className="feat-card-inner" style={{ gap: 0 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 18 }}>
-                <span style={{ fontSize: 24, color: 'var(--accent-text)' }}>{f.glyph}</span>
-                <span className="mono-dim">{f.id.toUpperCase()}</span>
-              </div>
+            <Panel className="feat-card-inner" style={{ gap: 0 }}>
               <div style={{ marginTop: 'auto' }}>
-                <div className="h-title" style={{ fontSize: 20, marginBottom: 6 }}>{f.label}</div>
-                <div style={{ color: 'var(--text-dim)', fontSize: 13.5, lineHeight: 1.45, marginBottom: 14 }}>{f.desc}</div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span className="feat-card-arrow">ENTER MODULE →</span>
-                </div>
+                <div className="h-title" style={{ fontSize: 18, marginBottom: 8 }}>{f.label}</div>
+                <div className="feature-card-copy" style={{ color: 'var(--text-dim)', fontSize: 14, lineHeight: 1.55, marginBottom: 14 }}>{f.desc}</div>
+                <span className="feat-card-arrow">Open →</span>
               </div>
             </Panel>
           </button>
