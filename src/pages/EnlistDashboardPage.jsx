@@ -22,7 +22,7 @@ function toTitleCase(t) {
 
 const FEATURES = [
   { id: 'expect',  path: '/what-to-expect', glyph: '▤', label: 'WHAT TO EXPECT',      desc: 'Reporting flow, packing checklist, first-day schedule, key NS terminology.' },
-  { id: 'fitness', path: '/fitness-prep',   glyph: '▲', label: 'PES-BASED FITNESS',    desc: 'Training plans calibrated to your PES and chosen IPPT target, with sets and reps.' },
+  { id: 'fitness', path: '/enlist/workout',  glyph: '▲', label: 'PES-BASED FITNESS',    desc: 'AI-calibrated weekly plan, live workout logger, and your training streak — tuned to your PES.' },
   { id: 'chat',    path: '/ai-chat',        glyph: '◈', label: 'AI CHATBOT',            desc: 'Retrieval-only SAF answers. Sourced from ns.sg and mindef.gov.sg exclusively.' },
   { id: 'intel',   path: '/peer-intel',     glyph: '⊕', label: 'PEER INTEL FEED',      desc: 'Verified experiences from veterans, organised by vocation and batch.' },
 ];

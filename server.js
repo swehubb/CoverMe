@@ -288,6 +288,74 @@ app.post('/api/weekend-plan', async (req, res) => {
   }
 });
 
+// POST /api/recommend-workout { pes, recentLogs } -> week plan | { useDefault: true }
+// recentLogs: up to the last 5 COMPLETED workout sessions. Empty => default template
+// (no LLM call). The model applies progressive overload within the allowed library.
+const RECOMMEND_WORKOUT_SYSTEM = `You are a progressive overload fitness coach for Singapore National Servicemen preparing for IPPT. You will receive a user's PES status and their last few workout logs. Generate a 7-day workout plan with progressive overload adjustments based on their recent performance.
+
+STRICT RULES:
+- You may ONLY suggest exercises from these exact lists:
+  Push-up variants: Normal pushups, Diamond pushups, Wide-arm pushups, Negative pushups, Knees on ground pushups
+  Sit-up variants: Situps, Leg raises, Bicycle crunches, Flutter kicks, Russian twists
+  Run variants: Interval run, Tempo run, Aerobic run
+- Progressive overload logic: if the user completed all target sets and reps for an exercise in their last session, increase reps by 2 or sets by 1. If they did not complete all sets, keep the same target. If they missed the exercise entirely, keep or reduce slightly.
+- For runs: if they completed the run, increase duration by 5 min or increase interval count by 1.
+- Never prescribe exercises beyond the user's PES capability — PES C and below: no running variants except Aerobic run, no Diamond or Wide-arm pushups.
+- Sunday is always rest.
+- Return ONLY valid JSON, no preamble, no markdown, no backticks.
+
+JSON schema:
+{
+  "useDefault": false,
+  "days": {
+    "Monday": { "focus": "string", "exercises": [ { "name": "string", "targetSets": 0, "targetReps": 0 } ] },
+    "Tuesday": { "focus": "string", "exercises": [ { "name": "string", "targetSets": 0, "targetReps": 0 } ] },
+    "Wednesday": { "focus": "string", "exercises": [ { "name": "string", "targetSets": 0, "targetReps": 0 } ] },
+    "Thursday": { "focus": "string", "exercises": [ { "name": "string", "targetSets": 0, "targetReps": 0 } ] },
+    "Friday": { "focus": "string", "exercises": [ { "name": "string", "targetSets": 0, "targetReps": 0 } ] },
+    "Saturday": { "focus": "string", "exercises": [ { "name": "string", "targetSets": 0, "targetReps": 0 } ] },
+    "Sunday": { "focus": "Rest", "exercises": [] }
+  }
+}`;
+
+const RECOMMEND_DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+
+app.post('/api/recommend-workout', async (req, res) => {
+  const pes = (req.body?.pes || 'B1').toString();
+  const recentLogs = Array.isArray(req.body?.recentLogs) ? req.body.recentLogs : [];
+
+  // No history → caller uses the local PES default template; no LLM call needed.
+  if (recentLogs.length === 0) return res.json({ useDefault: true });
+
+  const logsText = recentLogs
+    .slice(-5)
+    .map((log) => {
+      const date = (log?.date || '').toString().slice(0, 10);
+      const exercises = Array.isArray(log?.exercises)
+        ? log.exercises
+            .map((ex) => {
+              const sets = Array.isArray(ex?.sets) ? ex.sets : [];
+              const detail = sets.map((s) => `${s?.reps ?? '-'}r${s?.weight != null ? `@${s.weight}kg` : ''}`).join(', ');
+              return `${ex?.name || 'Unknown'}: ${sets.length} sets [${detail}]`;
+            })
+            .join('; ')
+        : 'no exercises';
+      return `${log?.day || '?'} (${date}): ${exercises}`;
+    })
+    .join('\n');
+
+  const prompt = `PES Status: ${pes}\nLast ${Math.min(recentLogs.length, 5)} completed sessions:\n${logsText}\n\nGenerate the progressive-overload 7-day plan.`;
+
+  try {
+    const raw = await chatJSON(RECOMMEND_WORKOUT_SYSTEM, prompt);
+    if (!raw?.days || RECOMMEND_DAYS.some((day) => !raw.days[day])) throw new Error('Invalid shape');
+    return res.json({ useDefault: false, days: raw.days });
+  } catch (err) {
+    console.error('[recommend-workout] falling back:', err.message);
+    return res.json({ useDefault: true });
+  }
+});
+
 // POST /api/companion { message, history } -> { reply }
 // Multi-turn: history is the full prior conversation; the new user message is
 // appended before sending the whole thread to the model.
