@@ -86,8 +86,9 @@ export function pesBand(pes) {
   return 'C'; // C, E, F, or anything unrecognised → gentlest band
 }
 
-// Builds a fresh default week plan in the canonical week-plan shape.
-export function buildDefaultWeekPlan(pes) {
+// A weekly template keyed Monday→Sunday: { Monday: { focus, exercises }, ... }.
+// This is the reusable shape the rolling dated queue is expanded from.
+export function buildDefaultWeekTemplate(pes) {
   const band = TEMPLATES[pesBand(pes)];
   const days = {};
   DAYS.forEach((day) => {
@@ -97,7 +98,24 @@ export function buildDefaultWeekPlan(pes) {
       exercises: template.exercises.map((ex) => ({ ...ex })),
     };
   });
-  return { generatedAt: new Date().toISOString(), days };
+  return days;
+}
+
+// Builds a fresh default plan: { generatedAt, weekTemplate }.
+export function buildDefaultPlan(pes) {
+  return { generatedAt: new Date().toISOString(), weekTemplate: buildDefaultWeekTemplate(pes) };
+}
+
+export const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+// Weekday name for a Date (matches the keys used in a week template).
+export function weekdayOf(date) {
+  return WEEKDAY_NAMES[(date instanceof Date ? date : new Date(date)).getDay()];
+}
+
+// True when a template day is a rest day (no exercises / focus says rest).
+export function isRestTemplateDay(dayPlan) {
+  return !dayPlan || !Array.isArray(dayPlan.exercises) || dayPlan.exercises.length === 0 || /rest/i.test(dayPlan.focus || '');
 }
 
 // Human-readable target for a plan exercise — tolerant of AI output that only
@@ -119,9 +137,13 @@ export default {
   RUN_EXERCISES,
   ALL_EXERCISES,
   DAYS,
+  WEEKDAY_NAMES,
   isRunExercise,
   sanitisePlanExercises,
   pesBand,
-  buildDefaultWeekPlan,
+  buildDefaultWeekTemplate,
+  buildDefaultPlan,
+  weekdayOf,
+  isRestTemplateDay,
   formatExerciseDetail,
 };

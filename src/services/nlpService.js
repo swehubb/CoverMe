@@ -123,13 +123,13 @@ export async function getWeekendPlan(payload) {
   }
 }
 
-// recommendWorkout(pes, recentLogs) -> week plan { useDefault: false, days } | { useDefault: true }
-// recentLogs: up to the last 5 completed workout sessions ([] if no history).
-// Always resolves — never throws — so the workout screen can fall back to the
-// local PES default template on any failure.
-export async function recommendWorkout(pes, recentLogs = []) {
+// recommendWorkout({ pes, goal, intake, recentLogs }) -> { useDefault: false, days } | { useDefault: true }
+// intake: baseline + preferences ({ pushups, situps, runMmss, sessionMinutes, daysPerWeek }).
+// recentLogs: up to the last 5 completed sessions. Always resolves — never throws —
+// so the workout screen can fall back to the local PES default template on any failure.
+export async function recommendWorkout({ pes, goal, intake = null, recentLogs = [] }) {
   try {
-    const data = await postJSON('/api/recommend-workout', { pes, recentLogs });
+    const data = await postJSON('/api/recommend-workout', { pes, goal, intake, recentLogs });
     if (data?.useDefault || !data?.days) return { useDefault: true };
     return { useDefault: false, days: data.days };
   } catch (err) {

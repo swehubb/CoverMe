@@ -288,20 +288,22 @@ app.post('/api/weekend-plan', async (req, res) => {
   }
 });
 
-// POST /api/recommend-workout { pes, recentLogs } -> week plan | { useDefault: true }
-// recentLogs: up to the last 5 COMPLETED workout sessions. Empty => default template
-// (no LLM call). The model applies progressive overload within the allowed library.
-const RECOMMEND_WORKOUT_SYSTEM = `You are a progressive overload fitness coach for Singapore National Servicemen preparing for IPPT. You will receive a user's PES status and their last few workout logs. Generate a 7-day workout plan with progressive overload adjustments based on their recent performance.
+// POST /api/recommend-workout { pes, goal, intake, recentLogs } -> week template | { useDefault: true }
+// intake: { pushups, situps, runMmss, sessionMinutes, daysPerWeek } baseline + preferences.
+// recentLogs: up to the last 5 COMPLETED workout sessions (for progressive overload).
+// With no intake AND no logs there is nothing to tailor from -> { useDefault: true }.
+const RECOMMEND_WORKOUT_SYSTEM = `You are a progressive overload fitness coach for Singapore National Servicemen preparing for IPPT. You will receive a user's PES status, IPPT goal, baseline fitness, training preferences, and their last few workout logs. Generate a 7-day weekly training template tailored to all of these.
 
 STRICT RULES:
 - You may ONLY suggest exercises from these exact lists:
   Push-up variants: Normal pushups, Diamond pushups, Wide-arm pushups, Negative pushups, Knees on ground pushups
   Sit-up variants: Situps, Leg raises, Bicycle crunches, Flutter kicks, Russian twists
   Run variants: Interval run, Tempo run, Aerobic run
-- Progressive overload logic: if the user completed all target sets and reps for an exercise in their last session, increase reps by 2 or sets by 1. If they did not complete all sets, keep the same target. If they missed the exercise entirely, keep or reduce slightly.
-- For runs: if they completed the run, increase duration by 5 min or increase interval count by 1.
+- TRAINING FREQUENCY: make EXACTLY the requested number of days per week training days; every other day must be a rest day with focus "Rest" and an empty exercises array.
+- SESSION LENGTH: size each session's total volume to be completable within the requested minutes per session.
+- GOAL + BASELINE: bias the plan toward the user's weakest IPPT station given their baseline reps/run time, and toward their award goal (e.g. Gold demands higher volume than Pass).
+- Progressive overload (when logs are present): if the user completed all target sets and reps for an exercise last time, increase reps by 2 or sets by 1. If they did not complete all sets, keep the same target. If they missed it entirely, keep or reduce slightly. For runs: if completed, increase duration by 5 min or interval count by 1.
 - Never prescribe exercises beyond the user's PES capability — PES C and below: no running variants except Aerobic run, no Diamond or Wide-arm pushups.
-- Sunday is always rest.
 - Return ONLY valid JSON, no preamble, no markdown, no backticks.
 
 JSON schema:
@@ -314,37 +316,46 @@ JSON schema:
     "Thursday": { "focus": "string", "exercises": [ { "name": "string", "targetSets": 0, "targetReps": 0 } ] },
     "Friday": { "focus": "string", "exercises": [ { "name": "string", "targetSets": 0, "targetReps": 0 } ] },
     "Saturday": { "focus": "string", "exercises": [ { "name": "string", "targetSets": 0, "targetReps": 0 } ] },
-    "Sunday": { "focus": "Rest", "exercises": [] }
+    "Sunday": { "focus": "string", "exercises": [ { "name": "string", "targetSets": 0, "targetReps": 0 } ] }
   }
-}`;
+}
+Rest days use focus "Rest" and an empty exercises array.`;
 
 const RECOMMEND_DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
 app.post('/api/recommend-workout', async (req, res) => {
   const pes = (req.body?.pes || 'B1').toString();
+  const goal = (req.body?.goal || 'Pass').toString();
+  const intake = req.body?.intake && typeof req.body.intake === 'object' ? req.body.intake : null;
   const recentLogs = Array.isArray(req.body?.recentLogs) ? req.body.recentLogs : [];
 
-  // No history → caller uses the local PES default template; no LLM call needed.
-  if (recentLogs.length === 0) return res.json({ useDefault: true });
+  // Nothing to tailor from → caller uses the local PES default template.
+  if (!intake && recentLogs.length === 0) return res.json({ useDefault: true });
 
-  const logsText = recentLogs
-    .slice(-5)
-    .map((log) => {
-      const date = (log?.date || '').toString().slice(0, 10);
-      const exercises = Array.isArray(log?.exercises)
-        ? log.exercises
-            .map((ex) => {
-              const sets = Array.isArray(ex?.sets) ? ex.sets : [];
-              const detail = sets.map((s) => `${s?.reps ?? '-'}r${s?.weight != null ? `@${s.weight}kg` : ''}`).join(', ');
-              return `${ex?.name || 'Unknown'}: ${sets.length} sets [${detail}]`;
-            })
-            .join('; ')
-        : 'no exercises';
-      return `${log?.day || '?'} (${date}): ${exercises}`;
-    })
-    .join('\n');
+  const intakeText = intake
+    ? `Baseline push-ups (60s): ${intake.pushups ?? '?'}\nBaseline sit-ups (60s): ${intake.situps ?? '?'}\n2.4km run time: ${intake.runMmss || '?'}\nMinutes per session: ${intake.sessionMinutes ?? 45}\nTraining days per week: ${intake.daysPerWeek ?? 4}`
+    : 'No baseline provided.';
 
-  const prompt = `PES Status: ${pes}\nLast ${Math.min(recentLogs.length, 5)} completed sessions:\n${logsText}\n\nGenerate the progressive-overload 7-day plan.`;
+  const logsText = recentLogs.length
+    ? recentLogs
+        .slice(-5)
+        .map((log) => {
+          const date = (log?.date || '').toString().slice(0, 10);
+          const exercises = Array.isArray(log?.exercises)
+            ? log.exercises
+                .map((ex) => {
+                  const sets = Array.isArray(ex?.sets) ? ex.sets : [];
+                  const detail = sets.map((s) => `${s?.reps ?? '-'}r${s?.weight != null ? `@${s.weight}kg` : ''}`).join(', ');
+                  return `${ex?.name || 'Unknown'}: ${sets.length} sets [${detail}]`;
+                })
+                .join('; ')
+            : 'no exercises';
+          return `${log?.day || '?'} (${date}): ${exercises}`;
+        })
+        .join('\n')
+    : 'No completed sessions yet — base the plan on the baseline and goal.';
+
+  const prompt = `PES Status: ${pes}\nIPPT Goal: ${goal}\n\nBaseline & preferences:\n${intakeText}\n\nRecent completed sessions:\n${logsText}\n\nGenerate the tailored 7-day weekly template. Remember: exactly ${intake?.daysPerWeek ?? 4} training days, the rest are Rest days.`;
 
   try {
     const raw = await chatJSON(RECOMMEND_WORKOUT_SYSTEM, prompt);
