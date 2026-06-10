@@ -214,7 +214,7 @@ select.inp { cursor:pointer; appearance:none; background-image:url("data:image/s
 .score-preview { margin-top:20px; padding:16px 18px; background:var(--bg); border:1px solid var(--border); border-radius:6px; }
 
 /* Sentinel */
-.sentinel-grid { display:grid; grid-template-columns:1fr 1fr; gap:18px; align-items:start; }
+.sentinel-grid { display:grid; grid-template-columns:1fr 1fr; gap:18px; align-items:stretch; }
 .journal-textarea { width:100%; background:var(--bg); border:1px solid var(--border-strong); border-radius:6px; color:var(--text); font-family:var(--font-body); font-size:15px; padding:14px; line-height:1.6; resize:vertical; outline:none; transition:border-color 0.15s; min-height:180px; }
 .journal-textarea:focus { border-color:var(--accent-2); }
 .support-opt-card { all:unset; cursor:pointer; display:flex; gap:14px; align-items:center; padding:14px 18px; border:1px solid var(--border); border-radius:6px; background:var(--surface); transition:all 0.15s; width:100%; }

@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../services/supabase';
 import { getDemoAccountByUid } from '../data/mockAccounts';
 
@@ -98,10 +98,13 @@ export function AuthProvider({ children }) {
     setUser((cur) => (typeof updater === 'function' ? updater(cur) : updater));
   };
 
-  const syncAuthSession = (nextUser, nextModule) => {
-    setUser(nextUser);
+  const syncAuthSession = useCallback((nextUser, nextModule) => {
+    setUser((current) => {
+      const supabaseId = nextUser?.supabaseId || current?.supabaseId;
+      return supabaseId && !nextUser?.supabaseId ? { ...nextUser, supabaseId } : nextUser;
+    });
     setCurrentModule(nextModule || nextUser?.currentModule || 'enlist');
-  };
+  }, []);
 
   const clearSession = () => {
     setUser(null);

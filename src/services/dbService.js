@@ -134,6 +134,7 @@ export async function loadFeedPosts() {
   if (error) { console.warn('[db] loadFeedPosts:', error.message); return null; }
   return data.map((row) => ({
     id: row.id,
+    userId: row.user_id,
     name: row.author_name,
     unit: row.author_unit,
     recency: timeAgo(row.created_at),
@@ -176,6 +177,12 @@ export async function saveFeedPost(supabaseId, post) {
   return data?.id ?? null;
 }
 
+export async function deleteFeedPost(dbId) {
+  if (!dbId) return;
+  const { error } = await supabase.from('feed_posts').delete().eq('id', dbId);
+  if (error) console.warn('[db] deleteFeedPost:', error.message);
+}
+
 export async function saveFeedComment(postDbId, supabaseId, authorName, text) {
   if (!supabaseId || !postDbId) return;
   const { error } = await supabase.from('feed_comments').insert({
@@ -197,6 +204,7 @@ export async function loadWallPosts() {
   if (error) { console.warn('[db] loadWallPosts:', error.message); return null; }
   return data.map((row) => ({
     id: row.id,
+    userId: row.user_id,
     author: row.author_alias,
     phase: row.phase,
     topic: row.topic,
@@ -230,6 +238,12 @@ export async function saveWallPost(supabaseId, post) {
     .single();
   if (error) { console.warn('[db] saveWallPost:', error.message); return null; }
   return data?.id ?? null;
+}
+
+export async function deleteWallPost(dbId) {
+  if (!dbId) return;
+  const { error } = await supabase.from('wall_posts').delete().eq('id', dbId);
+  if (error) console.warn('[db] deleteWallPost:', error.message);
 }
 
 export async function saveWallReply(postDbId, supabaseId, text) {
