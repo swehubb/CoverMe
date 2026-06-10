@@ -10,6 +10,8 @@ export default function SvgLineChart({
   pad = 28,
   color = 'var(--amber)',
   goal,
+  gridColor = '#1C1C1C',
+  textColor = '#5A5A5A',
   goalLabel = 'GOAL',
   onDotClick,
 }) {
@@ -48,8 +50,8 @@ export default function SvgLineChart({
 
       {gridLines.map((g, i) => (
         <g key={i}>
-          <line x1={pad} x2={W - pad} y1={yOf(g)} y2={yOf(g)} stroke="#1C1C1C" strokeWidth="1" />
-          <text x={pad - 8} y={yOf(g) + 3} textAnchor="end" fontSize="9" fill="#5A5A5A" fontFamily="var(--font-mono)">{fmt(g)}</text>
+          <line x1={pad} x2={W - pad} y1={yOf(g)} y2={yOf(g)} stroke={gridColor} strokeWidth="1" />
+          <text x={pad - 8} y={yOf(g) + 3} textAnchor="end" fontSize="9" fill={textColor} fontFamily="var(--font-body)">{fmt(g)}</text>
         </g>
       ))}
 
