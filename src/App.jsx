@@ -76,6 +76,13 @@ const defaultState = {
     attempts: demoIpptAttemptsByAccount['recruit-tan'],
     attemptsByAccount: demoIpptAttemptsByAccount,
   },
+  swim: {
+    attempts: [],
+  },
+  workoutPlan: {
+    cacheKey: null,
+    plan: null,
+  },
   journal: {
     entries: [
       seedEntry('2026-05-07', 'How are you ending today?', 'Tired but steady.', 0.71),
@@ -235,6 +242,8 @@ function loadState() {
           attemptsByAccount: { ...defaultState.ippt.attemptsByAccount, ...parsed.ippt?.attemptsByAccount },
         },
         support: { ...defaultState.support, ...parsed.support },
+        swim: { ...defaultState.swim, ...parsed.swim },
+        workoutPlan: { ...defaultState.workoutPlan, ...parsed.workoutPlan },
       };
     }
     return {
@@ -248,6 +257,8 @@ function loadState() {
         ...parsed.ippt,
         attemptsByAccount: { ...defaultState.ippt.attemptsByAccount, ...parsed.ippt?.attemptsByAccount },
       },
+      swim: { ...defaultState.swim, ...parsed.swim },
+      workoutPlan: { ...defaultState.workoutPlan, ...parsed.workoutPlan },
       journal: { ...defaultState.journal, ...parsed.journal },
       community: { ...defaultState.community, ...parsed.community },
       support: { ...defaultState.support, ...parsed.support },
@@ -300,6 +311,10 @@ function App() {
 
     dbService.loadWallPosts().then((posts) => {
       if (posts?.length) setState((c) => ({ ...c, community: { ...c.community, wallPosts: posts } }));
+    });
+
+    dbService.loadSwimAttempts(supabaseId).then((attempts) => {
+      if (attempts?.length) setState((c) => ({ ...c, swim: { ...c.swim, attempts } }));
     });
   }, [supabaseId]);
 
@@ -425,7 +440,7 @@ function AppShell({ state, updateState }) {
               path="/train"
               element={<TrainScreen state={state} updateState={updateState} activeModule={activeModule} />}
             />
-            <Route path="/weekend-planner" element={<WeekendPlannerScreen state={state} activeModule={activeModule} />} />
+            <Route path="/weekend-planner" element={<WeekendPlannerScreen state={state} updateState={updateState} activeModule={activeModule} />} />
             <Route path="/training-feed" element={<TrainingFeedScreen state={state} updateState={updateState} />} />
             <Route
               path="/profile"
@@ -493,8 +508,8 @@ function HomeDashboard({ state, phase, activeModule }) {
             'Four interconnected features support physical performance, mental wellness, and peer solidarity throughout active service.',
           detailBlocks: [
             {
-              title: 'IPPT Tracker',
-              body: 'Log attempts, set goals, and follow an adaptive training roadmap with clear benchmarks.',
+              title: 'Workout Tracker',
+              body: 'Log IPPT and vocation-based fitness attempts, set goals, and track your progression.',
               to: '/train',
             },
             {
@@ -1260,6 +1275,55 @@ function AttemptForm({ form, setForm }) {
   );
 }
 
+const SWIM_PASS_SECONDS = 50 * 60; // NDU 2km sea swim pass standard: 50 minutes
+
+const BLANK_SWIM_FORM = () => ({ swimMins: '', swimSecs: '', date: todayIso() });
+
+function SwimAttemptForm({ form, setForm }) {
+  const dateRef = useRef(null);
+  const clampSecs = (v) => String(Math.min(59, Math.max(0, parseInt(v) || 0))).padStart(2, '0');
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+      <div>
+        <div className="label" style={{ fontSize: 10, marginBottom: 6 }}>2KM SEA SWIM TIME</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <input
+            type="number" min="0" max="120" placeholder="MM"
+            value={form.swimMins}
+            onChange={(e) => setForm({ ...form, swimMins: e.target.value })}
+            style={{ width: 64, textAlign: 'center' }}
+          />
+          <span style={{ color: 'var(--text-dim)', fontSize: 18, fontFamily: 'var(--font-mono)' }}>:</span>
+          <input
+            type="number" min="0" max="59" placeholder="SS"
+            value={form.swimSecs}
+            onBlur={(e) => setForm({ ...form, swimSecs: clampSecs(e.target.value) })}
+            onChange={(e) => setForm({ ...form, swimSecs: e.target.value })}
+            style={{ width: 64, textAlign: 'center' }}
+          />
+        </div>
+        <div className="mono-dim" style={{ fontSize: 9, marginTop: 4 }}>MM : SS (max 120 min)</div>
+      </div>
+      <div>
+        <div className="label" style={{ fontSize: 10, marginBottom: 6 }}>DATE</div>
+        <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+          <input
+            ref={dateRef} type="date" value={form.date}
+            onChange={(e) => setForm({ ...form, date: e.target.value })}
+            style={{ width: '100%', paddingRight: 36 }}
+          />
+          <button
+            type="button"
+            onClick={() => { try { dateRef.current?.showPicker(); } catch { dateRef.current?.click(); } }}
+            style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: 'var(--text-dim)', fontSize: 16, lineHeight: 1 }}
+            title="Open calendar"
+          >📅</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function TrainScreen({ state, updateState }) {
   const navigate = useNavigate();
   const [showModal, setShowModal]     = useState(false);
@@ -1269,6 +1333,12 @@ function TrainScreen({ state, updateState }) {
   const [highlightedAttempt, setHighlightedAttempt] = useState(null);
   const [pbModal, setPbModal]         = useState(null);
   const historyRef = useRef(null);
+
+  // Sea swim state
+  const [showSwimModal, setShowSwimModal] = useState(false);
+  const [swimForm, setSwimForm]           = useState(BLANK_SWIM_FORM());
+  const [swimEditIdx, setSwimEditIdx]     = useState(null);
+  const [swimEditForm, setSwimEditForm]   = useState(null);
 
   const attempts = state.ippt.attempts;
   const latest   = attempts.length ? attempts[attempts.length - 1] : null;
@@ -1294,6 +1364,13 @@ function TrainScreen({ state, updateState }) {
   const accountId = profile?.id || 'recruit-tan';
 
   const feed = state.social?.trainingFeed ?? trainingActivity ?? [];
+
+  // Sea swim derivations
+  const swimAttempts    = state.swim?.attempts || [];
+  const swimLatest      = swimAttempts.length ? swimAttempts[swimAttempts.length - 1] : null;
+  const swimPbSeconds   = swimAttempts.length ? Math.min(...swimAttempts.map((a) => a.timeSeconds)) : null;
+  const swimPassed      = swimLatest ? swimLatest.timeSeconds <= SWIM_PASS_SECONDS : null;
+  const swimFormToSecs  = (f) => (parseInt(f.swimMins) || 0) * 60 + (parseInt(f.swimSecs) || 0);
 
   const handleChartDotClick = (chartIdx) => {
     setHighlightedAttempt(chartIdx);
@@ -1399,6 +1476,50 @@ function TrainScreen({ state, updateState }) {
     setEditForm(null);
   };
 
+  const submitSwimAttempt = async () => {
+    const timeSeconds = swimFormToSecs(swimForm);
+    if (!timeSeconds) return;
+    const newAttempt = { date: swimForm.date, timeSeconds };
+    const isNewPb = !swimAttempts.length || timeSeconds < (swimPbSeconds ?? 99999);
+    const dbId = await dbService.saveSwimAttempt(state.auth.profile?.supabaseId, newAttempt);
+    const attempt = { ...newAttempt, _dbId: dbId };
+    updateState((c) => ({ ...c, swim: { ...c.swim, attempts: [...(c.swim?.attempts || []), attempt] } }));
+    setShowSwimModal(false);
+    setSwimForm(BLANK_SWIM_FORM());
+    if (isNewPb) setPbModal({ newPbs: [{ exercise: '2km Sea Swim', value: formatRunTime(timeSeconds) }], newAttemptIdx: swimAttempts.length });
+  };
+
+  const openSwimEdit = (idx) => {
+    const a = swimAttempts[idx];
+    setSwimEditIdx(idx);
+    setSwimEditForm({ swimMins: String(Math.floor(a.timeSeconds / 60)), swimSecs: String(a.timeSeconds % 60).padStart(2, '0'), date: a.date });
+  };
+
+  const saveSwimEdit = () => {
+    const timeSeconds = swimFormToSecs(swimEditForm);
+    if (!timeSeconds) return;
+    const updated_attempt = { date: swimEditForm.date, timeSeconds };
+    updateState((c) => {
+      const updated = [...(c.swim?.attempts || [])];
+      const dbId = updated[swimEditIdx]?._dbId;
+      updated[swimEditIdx] = { ...updated_attempt, _dbId: dbId };
+      dbService.updateSwimAttempt(dbId, updated_attempt);
+      return { ...c, swim: { ...c.swim, attempts: updated } };
+    });
+    setSwimEditIdx(null);
+    setSwimEditForm(null);
+  };
+
+  const deleteSwimAttempt = (idx) => {
+    updateState((c) => {
+      const dbId = (c.swim?.attempts || [])[idx]?._dbId;
+      dbService.deleteSwimAttempt(dbId);
+      return { ...c, swim: { ...c.swim, attempts: (c.swim?.attempts || []).filter((_, i) => i !== idx) } };
+    });
+    setSwimEditIdx(null);
+    setSwimEditForm(null);
+  };
+
   const stationRows = [
     { label: 'PUSH-UPS',  val: latest?.pushups,                                  pts: stationPts?.pushups, max: 25 },
     { label: 'SIT-UPS',   val: latest?.situps,                                   pts: stationPts?.situps,  max: 25 },
@@ -1411,9 +1532,9 @@ function TrainScreen({ state, updateState }) {
   return (
     <div style={{ height: '100%', overflow: 'auto', padding: '28px 36px' }}>
       <span className="label" style={{ color: 'var(--accent-text)', marginBottom: 8, display: 'block' }}>
-        ▲ SERVE · IPPT TRACKER
+        ▲ SERVE · WORKOUT TRACKER
       </span>
-      <h1 className="h-display" style={{ fontSize: 52, marginBottom: 10 }}>IPPT TRACKER</h1>
+      <h1 className="h-display" style={{ fontSize: 52, marginBottom: 10 }}>WORKOUT TRACKER</h1>
 
       {/* GOAL SUB-HEADER */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 28, paddingBottom: 20, borderBottom: '1px solid var(--border)' }}>
@@ -1428,14 +1549,15 @@ function TrainScreen({ state, updateState }) {
       {/* PERSONAL BESTS */}
       <Panel ticks style={{ padding: 26, marginBottom: 16 }}>
         <span className="label" style={{ marginBottom: 18, display: 'block' }}>▲ PERSONAL BESTS · ALL TIME</span>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 0 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 0 }}>
           {[
-            { label: 'PUSH-UPS',  value: pbs ? pbs.pushups              : '—', unit: 'REPS',  color: 'var(--amber)' },
-            { label: 'SIT-UPS',   value: pbs ? pbs.situps               : '—', unit: 'REPS',  color: 'var(--amber)' },
-            { label: '2.4KM RUN', value: pbs ? formatRunTime(pbs.runSeconds) : '—', unit: 'MM:SS', color: 'var(--amber)' },
+            { label: 'PUSH-UPS',      value: pbs ? pbs.pushups : '—',                          unit: 'REPS',  color: 'var(--amber)' },
+            { label: 'SIT-UPS',       value: pbs ? pbs.situps : '—',                            unit: 'REPS',  color: 'var(--amber)' },
+            { label: '2.4KM RUN',     value: pbs ? formatRunTime(pbs.runSeconds) : '—',          unit: 'MM:SS', color: 'var(--amber)' },
+            { label: '2KM SEA SWIM',  value: swimPbSeconds != null ? formatRunTime(swimPbSeconds) : '—', unit: 'MM:SS', color: 'var(--accent-text)' },
           ].map(({ label, value, unit, color }, i, arr) => (
             <div key={label} style={{ textAlign: 'center', padding: '8px 16px', borderRight: i < arr.length - 1 ? '1px solid var(--border)' : 'none' }}>
-              <div style={{ fontFamily: 'var(--font-head)', fontWeight: 900, fontSize: 64, lineHeight: 1, color, marginBottom: 10 }}>{value}</div>
+              <div style={{ fontFamily: 'var(--font-head)', fontWeight: 900, fontSize: 56, lineHeight: 1, color, marginBottom: 10 }}>{value}</div>
               <div className="label" style={{ marginBottom: 2 }}>{label}</div>
               <div className="mono-dim" style={{ fontSize: 9 }}>{unit}</div>
             </div>
@@ -1463,12 +1585,32 @@ function TrainScreen({ state, updateState }) {
               {latestScore ? `${latestScore.score} / ${goalScore}` : `0 / ${goalScore}`}
             </div>
           </div>
+          {/* Sea swim pass/fail */}
+          <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+              <span className="mono-dim" style={{ fontSize: 10 }}>2KM SEA SWIM</span>
+              <span style={{
+                fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 700, letterSpacing: '0.08em',
+                color: swimPassed === null ? 'var(--text-faint)' : swimPassed ? 'var(--success)' : '#f87171',
+              }}>
+                {swimPassed === null ? 'NO ATTEMPT' : swimPassed ? 'PASS' : 'FAIL'}
+              </span>
+            </div>
+            {swimLatest && (
+              <div className="mono-dim" style={{ fontSize: 10 }}>
+                {formatRunTime(swimLatest.timeSeconds)} · std {formatRunTime(SWIM_PASS_SECONDS)}
+              </div>
+            )}
+          </div>
         </Panel>
 
         <Panel ticks style={{ padding: 26 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
             <span className="label">▲ STATION BREAKDOWN · LATEST</span>
-            <button className="btn ghost sm" onClick={() => { setForm(BLANK_FORM()); setShowModal(true); }}>LOG ATTEMPT</button>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button className="btn ghost sm" onClick={() => { setForm(BLANK_FORM()); setShowModal(true); }}>LOG IPPT</button>
+              <button className="btn ghost sm" onClick={() => { setSwimForm(BLANK_SWIM_FORM()); setShowSwimModal(true); }}>LOG SWIM</button>
+            </div>
           </div>
           {stationRows.map((s) => (
             <div key={s.label} style={{ marginBottom: 18 }}>
@@ -1484,12 +1626,30 @@ function TrainScreen({ state, updateState }) {
               </div>
             </div>
           ))}
+          {/* Sea swim station */}
+          <div style={{ paddingTop: 14, borderTop: '1px solid var(--border)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 5 }}>
+              <span className="label" style={{ fontSize: 10 }}>2KM SEA SWIM</span>
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 22, color: 'var(--accent-text)', fontVariantNumeric: 'tabular-nums' }}>
+                {swimLatest ? formatRunTime(swimLatest.timeSeconds) : '—'}
+              </span>
+            </div>
+            <div style={{ height: 4, background: 'var(--bg)', borderRadius: 2, overflow: 'hidden' }}>
+              <div style={{
+                width: swimLatest ? `${Math.min(100, (SWIM_PASS_SECONDS / swimLatest.timeSeconds) * 80)}%` : '0%',
+                height: '100%', background: swimPassed ? 'var(--success)' : 'var(--accent-text)', borderRadius: 2,
+              }} />
+            </div>
+            <div className="mono-dim" style={{ fontSize: 10, marginTop: 3 }}>
+              {swimPassed === null ? `NO ATTEMPT · STD ${formatRunTime(SWIM_PASS_SECONDS)}` : swimPassed ? 'PASS' : `FAIL · STD ${formatRunTime(SWIM_PASS_SECONDS)}`}
+            </div>
+          </div>
         </Panel>
       </div>
 
       {/* SCORE PROGRESSION */}
       <Panel ticks style={{ padding: 26, marginBottom: 16 }}>
-        <span className="label" style={{ marginBottom: 16, display: 'block' }}>▲ SCORE PROGRESSION</span>
+        <span className="label" style={{ marginBottom: 16, display: 'block' }}>▲ IPPT SCORE PROGRESSION</span>
         {chartSeries.length > 0 ? (
           <>
             <SvgLineChart
@@ -1538,7 +1698,7 @@ function TrainScreen({ state, updateState }) {
       {/* ATTEMPT HISTORY */}
       <div ref={historyRef}>
         <Panel ticks style={{ padding: 26, marginBottom: 16 }}>
-          <span className="label" style={{ marginBottom: 16, display: 'block' }}>▲ ATTEMPT HISTORY</span>
+          <span className="label" style={{ marginBottom: 16, display: 'block' }}>▲ IPPT ATTEMPT HISTORY</span>
           {attempts.length > 0 ? (
             <>
               <div className="attempt-history-grid attempt-history-head">
@@ -1575,6 +1735,40 @@ function TrainScreen({ state, updateState }) {
         </Panel>
       </div>
 
+      {/* 2KM SEA SWIM HISTORY */}
+      <Panel ticks style={{ padding: 26, marginBottom: 16 }}>
+        <span className="label" style={{ marginBottom: 16, display: 'block' }}>▲ 2KM SEA SWIM · ATTEMPT HISTORY</span>
+        {swimAttempts.length > 0 ? (
+          <>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: '8px 16px', marginBottom: 8 }}>
+              {['DATE', 'TIME', 'RESULT', ''].map((h) => (
+                <span key={h} className="label" style={{ fontSize: 10 }}>{h}</span>
+              ))}
+            </div>
+            {[...swimAttempts].reverse().map((attempt, i) => {
+              const passed = attempt.timeSeconds <= SWIM_PASS_SECONDS;
+              const origIdx = swimAttempts.length - 1 - i;
+              return (
+                <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: '8px 16px', padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
+                  <span className="mono-dim">{shortDate(attempt.date)}</span>
+                  <span className="mono" style={{ color: 'var(--accent-text)' }}>{formatRunTime(attempt.timeSeconds)}</span>
+                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, fontWeight: 700, color: passed ? 'var(--success)' : '#f87171' }}>
+                    {passed ? 'PASS' : 'FAIL'}
+                  </span>
+                  <button
+                    onClick={() => openSwimEdit(origIdx)}
+                    title="Edit"
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-faint)', padding: 0, fontSize: 13 }}
+                  >✎</button>
+                </div>
+              );
+            })}
+          </>
+        ) : (
+          <div className="mono-dim" style={{ padding: '20px 0', textAlign: 'center' }}>No sea swim attempts logged yet.</div>
+        )}
+      </Panel>
+
       {/* TRAINING FEED */}
       {feed.length > 0 && (
         <Panel ticks style={{ padding: 26, cursor: 'pointer' }} onClick={() => navigate('/training-feed')}>
@@ -1605,6 +1799,30 @@ function TrainScreen({ state, updateState }) {
             </div>
           ))}
         </Panel>
+      )}
+
+      {/* LOG SWIM MODAL */}
+      {showSwimModal && (
+        <Modal title="Log 2km Sea Swim" onClose={() => setShowSwimModal(false)}>
+          <SwimAttemptForm form={swimForm} setForm={setSwimForm} />
+          <button className="primary-button" style={{ marginTop: 20, width: '100%' }} onClick={submitSwimAttempt}>
+            SAVE ATTEMPT
+          </button>
+        </Modal>
+      )}
+
+      {/* EDIT SWIM MODAL */}
+      {swimEditIdx !== null && swimEditForm && (
+        <Modal title="Edit Sea Swim Attempt" onClose={() => { setSwimEditIdx(null); setSwimEditForm(null); }}>
+          <SwimAttemptForm form={swimEditForm} setForm={setSwimEditForm} />
+          <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
+            <button className="primary-button" style={{ flex: 1 }} onClick={saveSwimEdit}>SAVE CHANGES</button>
+            <button
+              onClick={() => deleteSwimAttempt(swimEditIdx)}
+              style={{ padding: '10px 18px', background: 'none', border: '1px solid #7f1d1d', color: '#f87171', borderRadius: 4, cursor: 'pointer', fontFamily: 'var(--font-mono)', fontSize: 12, letterSpacing: '0.06em' }}
+            >DELETE</button>
+          </div>
+        </Modal>
       )}
 
       {/* LOG ATTEMPT MODAL */}
@@ -2098,64 +2316,64 @@ function TrainingFeedScreen({ state, updateState }) {
 }
 
 // ─── WEEKEND PLANNER ─────────────────────────────────────────────────────────
-function WeekendPlannerScreen({ state, activeModule }) {
+function WeekendPlannerScreen({ state, updateState, activeModule }) {
   const profile = state.auth.profile;
-  const [plan, setPlan] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const ipptAttempts = state.ippt.attempts;
+  const swimAttempts = state.swim?.attempts || [];
+
+  const lastIpptDate = ipptAttempts.length ? ipptAttempts[ipptAttempts.length - 1].date : 'none';
+  const lastSwimDate = swimAttempts.length ? swimAttempts[swimAttempts.length - 1].date : 'none';
+  const cacheKey = `${lastIpptDate}|${lastSwimDate}`;
+
+  const cachedPlan = state.workoutPlan?.cacheKey === cacheKey ? state.workoutPlan?.plan : null;
+  const [plan, setPlan] = useState(cachedPlan);
+  const [loading, setLoading] = useState(!cachedPlan);
 
   useEffect(() => {
-    const recentAttempts = state.ippt.attempts.slice(-3).map((a) => {
+    if (cachedPlan) return;
+
+    const recentAttempts = ipptAttempts.slice(-3).map((a) => {
       const sc = calculateIpptScore(a.pushups, a.situps, a.runSeconds);
       return { score: sc.score, pushups: a.pushups, situps: a.situps, runTime: formatRunTime(a.runSeconds) };
     });
-    const latest = recentAttempts[recentAttempts.length - 1];
+    const latestIppt = recentAttempts[recentAttempts.length - 1];
+    const recentSwim = swimAttempts.slice(-3).map((a) => ({ time: formatRunTime(a.timeSeconds) }));
 
     nlpService.getWeekendPlan({
       pesStatus: profile.pesStatus,
       vocation: profile.vocation || 'General',
       ipptGoal: state.onboarding.ipptGoal || 'Pass',
-      currentScore: latest?.score ?? null,
-      currentAward: latest ? calculateIpptScore(
-        state.ippt.attempts.slice(-1)[0].pushups,
-        state.ippt.attempts.slice(-1)[0].situps,
-        state.ippt.attempts.slice(-1)[0].runSeconds,
+      currentScore: latestIppt?.score ?? null,
+      currentAward: latestIppt?.score ? calculateIpptScore(
+        ipptAttempts.slice(-1)[0].pushups,
+        ipptAttempts.slice(-1)[0].situps,
+        ipptAttempts.slice(-1)[0].runSeconds,
       ).award : null,
       attempts: recentAttempts,
+      swimAttempts: recentSwim,
     }).then((data) => {
-      setPlan(data || getWeekendPlanner(profile, state.onboarding.ipptGoal, state.ippt.attempts));
+      if (data) {
+        setPlan(data);
+        updateState((c) => ({ ...c, workoutPlan: { cacheKey, plan: data } }));
+      }
       setLoading(false);
     });
-  }, []);
+  }, [cacheKey]);
 
-  const displayPlan = plan || getWeekendPlanner(profile, state.onboarding.ipptGoal, state.ippt.attempts);
-
-  return (
-    <section style={{ padding: '28px 36px' }}>
-      <span className="label" style={{ color: 'var(--accent-text)', marginBottom: 8, display: 'block' }}>▲ SERVE · WEEKEND PLANNER</span>
-      <h1 className="h-display" style={{ fontSize: 52, marginBottom: 6 }}>WEEKEND PLANNER</h1>
-      <p style={{ color: 'var(--text-dim)', marginBottom: 20, fontSize: 14 }}>
-        {activeModule === 'serve'
-          ? 'AI-curated two-day block based on your IPPT band, PES status, and vocation.'
-          : 'AI-curated two-day block based on your IPPT band and target.'}
-      </p>
-      <div className="badge-row" style={{ marginBottom: 20 }}>
-        <span className="info-badge">PES {profile.pesStatus}</span>
-        <span className="info-badge">{(profile.vocation || 'General').toUpperCase()}</span>
-        <span className="info-badge">{state.onboarding.ipptGoal}</span>
-        {loading && <span className="info-badge" style={{ color: 'var(--accent-text)' }}>◈ Generating…</span>}
-      </div>
-
+  const PlanSection = ({ title, planData, color }) => {
+    if (!planData) return null;
+    return (
       <Panel ticks elevated style={{ padding: 26, marginBottom: 16 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
           <div>
-            <div className="label" style={{ color: 'var(--accent-text)', marginBottom: 6 }}>▲ THIS WEEKEND · AI PLAN</div>
-            <div className="h-title" style={{ fontSize: 20 }}>IPPT / VOCATION-BASED WEEKEND PLAN</div>
+            <div className="label" style={{ color, marginBottom: 6 }}>▲ THIS WEEKEND · AI PLAN</div>
+            <div className="h-title" style={{ fontSize: 20 }}>{title}</div>
           </div>
           <span className="info-badge">{(profile.vocation || 'General').toUpperCase()}</span>
         </div>
-        <p style={{ color: 'var(--text-dim)', marginBottom: 20, lineHeight: 1.6 }}>{displayPlan.summary}</p>
+        <p style={{ color: 'var(--text-dim)', marginBottom: 20, lineHeight: 1.6 }}>{planData.summary}</p>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-          {displayPlan.days.map((day) => (
+          {planData.days.map((day) => (
             <Panel key={day.id} style={{ padding: 20 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
                 <span className="h-title" style={{ fontSize: 16 }}>{day.label}</span>
@@ -2166,6 +2384,30 @@ function WeekendPlannerScreen({ state, activeModule }) {
           ))}
         </div>
       </Panel>
+    );
+  };
+
+  return (
+    <section style={{ padding: '28px 36px' }}>
+      <span className="label" style={{ color: 'var(--accent-text)', marginBottom: 8, display: 'block' }}>▲ SERVE · WEEKEND PLANNER</span>
+      <h1 className="h-display" style={{ fontSize: 52, marginBottom: 6 }}>WEEKEND PLANNER</h1>
+      <p style={{ color: 'var(--text-dim)', marginBottom: 20, fontSize: 14 }}>
+        AI-curated weekend block covering IPPT and your 2km sea swim — personalised to your latest attempts.
+      </p>
+      <div className="badge-row" style={{ marginBottom: 20 }}>
+        <span className="info-badge">PES {profile.pesStatus}</span>
+        <span className="info-badge">{(profile.vocation || 'General').toUpperCase()}</span>
+        <span className="info-badge">{state.onboarding.ipptGoal}</span>
+        {loading && <span className="info-badge" style={{ color: 'var(--accent-text)' }}>◈ Generating…</span>}
+        {!loading && cachedPlan && <span className="info-badge" style={{ color: 'var(--success)' }}>◈ Saved plan</span>}
+      </div>
+
+      {loading && !plan && (
+        <div className="mono-dim" style={{ textAlign: 'center', padding: '60px 0' }}>Generating your personalised plan…</div>
+      )}
+
+      <PlanSection title="IPPT TRAINING PLAN" planData={plan?.ippt} color="var(--amber)" />
+      <PlanSection title="2KM SEA SWIM PLAN" planData={plan?.swim} color="var(--accent-text)" />
     </section>
   );
 }

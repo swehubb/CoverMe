@@ -110,12 +110,12 @@ export async function trendNarrative(scores) {
   }
 }
 
-// getWeekendPlan({ pesStatus, vocation, ipptGoal, currentScore, currentAward, attempts })
-// -> { summary, days } | null on failure
+// getWeekendPlan({ pesStatus, vocation, ipptGoal, currentScore, currentAward, attempts, swimAttempts })
+// -> { ippt: { summary, days }, swim: { summary, days } } | null on failure
 export async function getWeekendPlan(payload) {
   try {
     const data = await postJSON('/api/weekend-plan', payload);
-    if (!data?.days?.length) throw new Error('Invalid shape');
+    if (!data?.ippt?.days?.length || !data?.swim?.days?.length) throw new Error('Invalid shape');
     return data;
   } catch (err) {
     console.warn('[nlpService.getWeekendPlan] fallback:', err.message);
