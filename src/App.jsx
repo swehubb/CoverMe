@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -14,6 +14,7 @@ import {
   Navigate,
   Route,
   Routes,
+  useLocation,
   useNavigate,
   useSearchParams,
 } from 'react-router-dom';
@@ -27,8 +28,10 @@ import SvgLineChart from './components/ui/SvgLineChart';
 import Insignia from './components/shared/Insignia';
 import { peerIntelPosts } from './data/mockPeerIntel';
 import { peerWallPosts, wallPhases } from './data/mockPeerWall';
-import { buddyTapSelectableMembers } from './data/mockPlatoon';
+import { platoonMembers, peerSupportLead } from './data/mockPlatoon';
+import { demoIpptAttemptsByAccount } from './data/mockAccounts';
 import nlpService from './services/nlpService';
+import * as dbService from './services/dbService';
 import { notify, crisisResources } from './services/mockNotification';
 import {
   buildTrainingPlan,
@@ -41,6 +44,8 @@ import ConsentPage from './pages/ConsentPage';
 import EnlistDashboardPage from './pages/EnlistDashboardPage';
 import WhatToExpectPage from './pages/WhatToExpectPage';
 import FitnessPrepPage from './pages/FitnessPrepPage';
+import PreEnlistmentWorkout from './pages/PreEnlistmentWorkout';
+import WorkoutSession from './pages/WorkoutSession';
 import AiChatPage from './pages/AiChatPage';
 import PeerIntelPage from './pages/PeerIntelPage';
 
@@ -51,7 +56,7 @@ const STORAGE_KEY = 'cover-me-state';
 // Bump this whenever the seeded mock data below (journal, intel/wall posts, IPPT,
 // training feed, etc.) changes. On load, a saved copy with an older version is
 // dropped so the new seeds appear instead of being overridden by the stale cache.
-const SEED_VERSION = 4;
+const SEED_VERSION = 6;
 
 const defaultState = {
   __seedVersion: SEED_VERSION,
@@ -63,12 +68,20 @@ const defaultState = {
     ipptGoal: '',
     consented: false,
   },
+  settings: {
+    sentinelEnabled: true,
+    eveningReminder: true,
+  },
   ippt: {
-    attempts: [
-      { date: '2026-01-12', pushups: 28, situps: 30, runSeconds: 840 },
-      { date: '2026-03-18', pushups: 34, situps: 36, runSeconds: 790 },
-      { date: '2026-05-02', pushups: 38, situps: 41, runSeconds: 760 },
-    ],
+    attempts: demoIpptAttemptsByAccount['recruit-tan'],
+    attemptsByAccount: demoIpptAttemptsByAccount,
+  },
+  swim: {
+    attempts: [],
+  },
+  workoutPlan: {
+    cacheKey: null,
+    plan: null,
   },
   journal: {
     entries: [
@@ -93,8 +106,40 @@ const defaultState = {
     concerns: [],
     buddyTaps: [],
   },
+  support: {
+    pslThreads: [
+      {
+        id: 'psl-001',
+        alias: 'Anonymous Recruit 04',
+        subject: 'Adjusting to section tempo',
+        status: 'open',
+        createdAt: '2026-05-18T21:14:00.000Z',
+        assignedTo: 'Amirul Hassan',
+        requesterId: 'platoon-02',
+        messages: [
+          { from: 'anonymous', text: 'I have not been coping well lately. I want to talk, but I do not want my name attached to this.', timestamp: '2026-05-18T21:14:00.000Z' },
+          { from: 'psl', text: 'Thanks for reaching out. We can keep this anonymous and take it one step at a time. What has been weighing on you the most?', timestamp: '2026-05-18T21:22:00.000Z' },
+        ],
+      },
+    ],
+    outreachPrompts: [
+      {
+        id: 'outreach-marcus-seed',
+        userId: 'platoon-02',
+        status: 'pending',
+        createdAt: '2026-05-18T20:40:00.000Z',
+        reason: 'A few people in your unit noticed you may be having a rough week.',
+      },
+    ],
+  },
   social: {
     trainingFeed: trainingActivity,
+    trainingFeedPosts: trainingActivity,
+  },
+  workout: {
+    logs: [],
+    intake: null,
+    plan: null,
   },
   ui: {
     activeModule: '',
@@ -105,12 +150,14 @@ const defaultState = {
 function normalizeProfile(profile) {
   if (!profile) return null;
 
-  const fullName = profile.fullName || profile.name || 'WEI';
+  const rawName = profile.fullName || profile.name;
+  const fullName = !rawName || ['WEI', 'TAN AN WEI'].includes(rawName.toUpperCase()) ? 'Zach Poh' : rawName;
   const pesStatus = profile.pesStatus || profile.pes || 'B1';
 
   return {
     ...profile,
     fullName,
+    name: fullName,
     pesStatus,
     vocation: profile.vocation || (profile.unit?.includes('SIR') ? 'Infantry' : 'General'),
     unit: profile.unit || '3 SIR',
@@ -126,6 +173,49 @@ function loadState() {
     const parsed = JSON.parse(saved);
     if (parsed?.auth?.profile) {
       parsed.auth.profile = normalizeProfile(parsed.auth.profile);
+      if (parsed.auth.profile.id === 'commander-marcus') {
+        parsed.auth.profile = normalizeProfile({
+          ...parsed.auth.profile,
+          id: 'nsf-marcus',
+          memberId: 'platoon-02',
+          role: 'nsf',
+          rank: 'REC',
+          pes: 'B1',
+          pesStatus: 'B1',
+          enlistmentDate: '2026-05-01',
+          ordDate: '2028-03-01',
+          ipptGoal: 'Pass',
+          consented: true,
+          currentModule: 'serve',
+        });
+      }
+      if (parsed.auth.profile.id === 'psl-jonathan') {
+        parsed.auth.profile = normalizeProfile({
+          ...parsed.auth.profile,
+          id: 'psl-amirul',
+          memberId: 'platoon-03',
+          name: 'Amirul Hassan',
+          fullName: 'Amirul Hassan',
+          role: 'peer-support',
+          rank: '3SG',
+        });
+      }
+    }
+    if (parsed?.support?.pslThreads) {
+      parsed.support.pslThreads = parsed.support.pslThreads.map((thread) => ({
+        ...thread,
+        assignedTo: thread.assignedTo === 'Jonathan Tay' ? 'Amirul Hassan' : thread.assignedTo,
+        requesterId: thread.requesterId || (thread.alias?.includes('Recruit') ? 'platoon-02' : undefined),
+        messages: thread.id === 'psl-001'
+          ? [
+              { from: 'anonymous', text: 'I have not been coping well lately. I want to talk, but I do not want my name attached to this.', timestamp: '2026-05-18T21:14:00.000Z' },
+              { from: 'psl', text: 'Thanks for reaching out. We can keep this anonymous and take it one step at a time. What has been weighing on you the most?', timestamp: '2026-05-18T21:22:00.000Z' },
+            ]
+          : thread.messages,
+      }));
+    }
+    if (parsed?.support && !parsed.support.outreachPrompts) {
+      parsed.support.outreachPrompts = defaultState.support.outreachPrompts;
     }
     if (
       parsed?.auth?.profile?.enlistmentDate === '2026-09-14' ||
@@ -145,6 +235,15 @@ function loadState() {
         ...defaultState,
         auth: { ...defaultState.auth, ...parsed.auth },
         onboarding: { ...defaultState.onboarding, ...parsed.onboarding },
+        settings: { ...defaultState.settings, ...parsed.settings },
+        ippt: {
+          ...defaultState.ippt,
+          ...parsed.ippt,
+          attemptsByAccount: { ...defaultState.ippt.attemptsByAccount, ...parsed.ippt?.attemptsByAccount },
+        },
+        support: { ...defaultState.support, ...parsed.support },
+        swim: { ...defaultState.swim, ...parsed.swim },
+        workoutPlan: { ...defaultState.workoutPlan, ...parsed.workoutPlan },
       };
     }
     return {
@@ -152,10 +251,19 @@ function loadState() {
       ...parsed,
       auth: { ...defaultState.auth, ...parsed.auth },
       onboarding: { ...defaultState.onboarding, ...parsed.onboarding },
-      ippt: { ...defaultState.ippt, ...parsed.ippt },
+      settings: { ...defaultState.settings, ...parsed.settings },
+      ippt: {
+        ...defaultState.ippt,
+        ...parsed.ippt,
+        attemptsByAccount: { ...defaultState.ippt.attemptsByAccount, ...parsed.ippt?.attemptsByAccount },
+      },
+      swim: { ...defaultState.swim, ...parsed.swim },
+      workoutPlan: { ...defaultState.workoutPlan, ...parsed.workoutPlan },
       journal: { ...defaultState.journal, ...parsed.journal },
       community: { ...defaultState.community, ...parsed.community },
+      support: { ...defaultState.support, ...parsed.support },
       social: { ...defaultState.social, ...parsed.social },
+      workout: { ...defaultState.workout, ...parsed.workout },
       ui: { ...defaultState.ui, ...parsed.ui },
     };
   } catch {
@@ -179,6 +287,37 @@ function App() {
     }
   }, [clearSession, state.auth.isAuthenticated, state.auth.profile, state.ui.activeModule, syncAuthSession]);
 
+  // Load persisted data from Supabase when a user authenticates
+  const supabaseId = state.auth.profile?.supabaseId;
+  useEffect(() => {
+    if (!supabaseId) return;
+
+    dbService.loadIpptAttempts(supabaseId).then((attempts) => {
+      if (attempts?.length) {
+        setState((c) => ({
+          ...c,
+          ippt: { ...c.ippt, attempts, attemptsByAccount: { ...c.ippt.attemptsByAccount, [c.auth.profile.id]: attempts } },
+        }));
+      }
+    });
+
+    dbService.loadJournalEntries(supabaseId).then((entries) => {
+      if (entries?.length) setState((c) => ({ ...c, journal: { ...c.journal, entries } }));
+    });
+
+    dbService.loadFeedPosts().then((posts) => {
+      if (posts?.length) setState((c) => ({ ...c, social: { ...c.social, trainingFeedPosts: posts } }));
+    });
+
+    dbService.loadWallPosts().then((posts) => {
+      if (posts?.length) setState((c) => ({ ...c, community: { ...c.community, wallPosts: posts } }));
+    });
+
+    dbService.loadSwimAttempts(supabaseId).then((attempts) => {
+      if (attempts?.length) setState((c) => ({ ...c, swim: { ...c.swim, attempts } }));
+    });
+  }, [supabaseId]);
+
   const updateState = (updater) => {
     setState((current) => updater(current));
   };
@@ -197,7 +336,7 @@ function ModuleHomeRoute({ module, state, updateState, phase }) {
   if (module === 'enlist') {
     return <EnlistDashboardPage state={state} updateState={updateState} phase={phase} />;
   }
-  return <HomeDashboard state={state} phase={phase} activeModule={module} />;
+  return <HomeDashboard state={state} updateState={updateState} phase={phase} activeModule={module} />;
 }
 
 function AppRoutes({ state, updateState }) {
@@ -251,8 +390,10 @@ function AppShell({ state, updateState }) {
   };
 
   const signOut = () => {
-    localStorage.removeItem(STORAGE_KEY);
-    updateState(() => defaultState);
+    updateState((current) => ({
+      ...current,
+      auth: { isAuthenticated: false, profile: null },
+    }));
     navigate('/login');
   };
 
@@ -261,11 +402,12 @@ function AppShell({ state, updateState }) {
       <CommandRail
         branch={branch}
         activeModule={activeModule}
+        profile={profile}
         onSignOut={signOut}
         onModuleChange={setActiveModule}
       />
       <div className="shell-main">
-        <TopBar branch={branch} onBranchChange={setBranch} profile={profile} />
+        <TopBar branch={branch} activeModule={activeModule} onModuleChange={setActiveModule} profile={profile} />
         <main className="screen-body scroll">
           <Routes>
             <Route path="/home" element={<Navigate to={`/${activeModule}`} replace />} />
@@ -278,11 +420,14 @@ function AppShell({ state, updateState }) {
               element={<ModuleHomeRoute module="serve" state={state} updateState={updateState} phase={phase} />}
             />
             <Route path="/fitness-prep" element={<FitnessPrepPage state={state} />} />
+            <Route path="/enlist/workout" element={<PreEnlistmentWorkout state={state} updateState={updateState} />} />
+            <Route path="/enlist/workout-session/:date" element={<WorkoutSession state={state} updateState={updateState} />} />
             <Route path="/ai-chat" element={<AiChatPage />} />
             <Route path="/peer-intel" element={<PeerIntelPage state={state} />} />
             <Route path="/peer-support" element={<PeerSupportWallScreen state={state} updateState={updateState} />} />
+            <Route path="/support-console" element={<SupportConsoleScreen state={state} updateState={updateState} />} />
             <Route path="/buddy-tap" element={<BuddyTapScreen state={state} updateState={updateState} />} />
-            <Route path="/escalation" element={<EscalationScreen state={state} />} />
+            <Route path="/escalation" element={<EscalationScreen state={state} updateState={updateState} />} />
             <Route
               path="/community"
               element={<CommunityScreen state={state} updateState={updateState} activeModule={activeModule} />}
@@ -295,7 +440,8 @@ function AppShell({ state, updateState }) {
               path="/train"
               element={<TrainScreen state={state} updateState={updateState} activeModule={activeModule} />}
             />
-            <Route path="/weekend-planner" element={<WeekendPlannerScreen state={state} activeModule={activeModule} />} />
+            <Route path="/weekend-planner" element={<WeekendPlannerScreen state={state} updateState={updateState} activeModule={activeModule} />} />
+            <Route path="/training-feed" element={<TrainingFeedScreen state={state} updateState={updateState} />} />
             <Route
               path="/profile"
               element={
@@ -319,7 +465,7 @@ function AppShell({ state, updateState }) {
 
 
 
-function HomeDashboard({ state, phase, activeModule }) {
+function HomeDashboard({ state, updateState, phase, activeModule }) {
   const navigate = useNavigate();
   const profile = state.auth.profile;
   const firstName = profile.fullName.split(' ')[1] || profile.fullName.split(' ')[0];
@@ -362,9 +508,14 @@ function HomeDashboard({ state, phase, activeModule }) {
             'Four interconnected features support physical performance, mental wellness, and peer solidarity throughout active service.',
           detailBlocks: [
             {
-              title: 'IPPT Tracker',
-              body: 'Log attempts, set goals, and follow an adaptive training roadmap with clear benchmarks.',
+              title: 'Workout Tracker',
+              body: 'Log IPPT and vocation-based fitness attempts, set goals, and track your progression.',
               to: '/train',
+            },
+            {
+              title: 'Training Feed',
+              body: 'Post IPPT results and training milestones. React and reply to your platoon mates.',
+              to: '/training-feed',
             },
             {
               title: 'Sentinel',
@@ -396,6 +547,12 @@ function HomeDashboard({ state, phase, activeModule }) {
     ? calculateIpptScore(latestIppt.pushups, latestIppt.situps, latestIppt.runSeconds)
     : null;
   const streakDays = getJournalStreak(state.journal.entries);
+  const outreachPrompt = (state.support?.outreachPrompts || []).find(
+    (prompt) => prompt.status !== 'dismissed' && (
+      prompt.userId === profile.memberId ||
+      (profile.fullName === 'Marcus Ng' && prompt.userId === 'platoon-02')
+    ),
+  );
 
   return (
     <div className="dash-page">
@@ -449,6 +606,46 @@ function HomeDashboard({ state, phase, activeModule }) {
                 <div className="h-title" style={{ fontSize: 18, marginBottom: 8 }}>{block.title}</div>
                 <div className="feature-card-copy" style={{ color: 'var(--text-dim)', fontSize: 14, lineHeight: 1.55, marginBottom: 14 }}>{block.body}</div>
                 <span className="feat-card-arrow">Open →</span>
+      {outreachPrompt && (
+        <Panel ticks className="support-outreach-panel" style={{ marginBottom: 16, padding: 22 }}>
+          <div>
+            <span className="label" style={{ color: 'var(--accent-text)', marginBottom: 6 }}>▲ PRIVATE SUPPORT CHECK-IN</span>
+            <h3>Some mates are looking out for you.</h3>
+            <p>{outreachPrompt.reason} You can talk to the peer support leader anonymously; they will not see your name.</p>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-end' }}>
+            <button className="primary-button small" onClick={() => navigate('/escalation')}>
+              View support options
+            </button>
+            <button
+              className="primary-button small"
+              onClick={() => updateState((current) => ({
+                ...current,
+                support: {
+                  ...current.support,
+                  outreachPrompts: (current.support?.outreachPrompts || []).map((p) =>
+                    p.id === outreachPrompt.id ? { ...p, status: 'dismissed' } : p
+                  ),
+                },
+              }))}
+            >
+              I'm okay
+            </button>
+          </div>
+        </Panel>
+      )}
+
+      <div className="dash-features-grid">
+        {moduleContent.detailBlocks.map((block) => (
+          <button key={block.title} className="feat-card" onClick={() => navigate(block.to)}>
+            <Panel ticks className="feat-card-inner" style={{ gap: 0 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 18 }}>
+                <span style={{ fontSize: 24, color: 'var(--accent-text)' }}>▲</span>
+              </div>
+              <div style={{ marginTop: 'auto' }}>
+                <div className="h-title" style={{ fontSize: 20, marginBottom: 6 }}>{block.title.toUpperCase()}</div>
+                <div className="feature-card-copy" style={{ color: 'var(--text-dim)', fontSize: 13.5, lineHeight: 1.45, marginBottom: 14 }}>{block.body}</div>
+                <span className="feat-card-arrow">ENTER MODULE →</span>
               </div>
             </Panel>
           </button>
@@ -470,6 +667,9 @@ function CommunityScreen({ state, updateState, activeModule }) {
 
 
 function PeerSupportWallScreen({ state, updateState }) {
+  const { user: authUser } = useAuth();
+  const supabaseId = authUser?.supabaseId || state.auth.profile?.supabaseId;
+  const myPostIds  = useRef(new Set());
   return (
     <section className="feed-screen">
       <ScreenHeader
@@ -478,31 +678,31 @@ function PeerSupportWallScreen({ state, updateState }) {
       />
       <FeedScreenContent
         posts={state.community.wallPosts}
-        onAddPost={(post) =>
+        onAddPost={async (post) => {
+          const dbId = await dbService.saveWallPost(supabaseId, post);
+          const postWithDbId = dbId ? { ...post, _dbId: dbId, userId: supabaseId } : post;
+          myPostIds.current.add(postWithDbId.id);
           updateState((current) => ({
             ...current,
             community: {
               ...current.community,
-              wallPosts: [post, ...current.community.wallPosts],
+              wallPosts: [postWithDbId, ...current.community.wallPosts],
             },
-          }))
-        }
-        onReply={(postId, reply) =>
+          }));
+        }}
+        onReply={(postId, reply) => {
+          const post = (state.community?.wallPosts || []).find((p) => p.id === postId);
+          dbService.saveWallReply(post?._dbId || postId, supabaseId, reply.text);
           updateState((current) => ({
             ...current,
             community: {
               ...current.community,
-              wallPosts: current.community.wallPosts.map((post) =>
-                post.id === postId
-                  ? {
-                      ...post,
-                      replies: [...(post.replies || []), reply],
-                    }
-                  : post,
+              wallPosts: current.community.wallPosts.map((p) =>
+                p.id === postId ? { ...p, replies: [...(p.replies || []), reply] } : p,
               ),
             },
-          }))
-        }
+          }));
+        }}
         onVote={(postId, upDelta, downDelta) =>
           updateState((current) => ({
             ...current,
@@ -520,6 +720,18 @@ function PeerSupportWallScreen({ state, updateState }) {
             },
           }))
         }
+        onDeletePost={(postId, dbId) => {
+          myPostIds.current.delete(postId);
+          dbService.deleteWallPost(dbId);
+          updateState((current) => ({
+            ...current,
+            community: {
+              ...current.community,
+              wallPosts: current.community.wallPosts.filter((p) => p.id !== postId),
+            },
+          }));
+        }}
+        isMyPost={(post) => myPostIds.current.has(post.id) || (supabaseId && post.userId === supabaseId)}
         feedType="wall"
         moderate={nlpService.moderate}
         emptyText="Be the first to post to the wall."
@@ -535,6 +747,8 @@ function FeedScreenContent({
   onAddPost,
   onReply,
   onVote,
+  onDeletePost,
+  isMyPost,
   feedType,
   moderate,
   emptyText,
@@ -704,7 +918,16 @@ function FeedScreenContent({
                     <strong>{post.author}</strong>
                     <span>{shortDate((post.createdAt || getToday().toISOString()).slice(0, 10))}</span>
                   </div>
-                  {feedType === 'intel' && <span className="verified-badge">Q&A</span>}
+                  <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                    {feedType === 'intel' && <span className="verified-badge">Q&A</span>}
+                    {onDeletePost && isMyPost?.(post) && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); onDeletePost(post.id, post._dbId); }}
+                        title="Delete post"
+                        style={{ all: 'unset', cursor: 'pointer', color: 'var(--text-faint)', fontSize: 15, lineHeight: 1, padding: '2px 4px' }}
+                      >✕</button>
+                    )}
+                  </div>
                 </div>
                 <div className="badge-row">
                   <span className="info-badge">{isWall ? phaseLabel(post.phase) : post[filterKey]}</span>
@@ -865,7 +1088,11 @@ function FeedScreenContent({
 }
 
 function BuddyTapScreen({ state, updateState }) {
-  const [buddyId, setBuddyId] = useState(buddyTapSelectableMembers[0].id);
+  const selectableBuddies = useMemo(
+    () => platoonMembers.filter((member) => member.id !== state.auth.profile?.memberId),
+    [state.auth.profile?.memberId],
+  );
+  const [buddyId, setBuddyId] = useState(selectableBuddies[0]?.id || '');
   const [buddyComment, setBuddyComment] = useState('');
   const [submittedConcern, setSubmittedConcern] = useState(false);
   const [checking, setChecking] = useState(false);
@@ -876,7 +1103,14 @@ function BuddyTapScreen({ state, updateState }) {
   const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
   const weeklyCount = taps.filter((tap) => new Date(tap.timestamp).getTime() >= weekAgo).length;
 
+  useEffect(() => {
+    if (!selectableBuddies.some((member) => member.id === buddyId)) {
+      setBuddyId(selectableBuddies[0]?.id || '');
+    }
+  }, [buddyId, selectableBuddies]);
+
   const submitConcern = async () => {
+    if (!buddyId) return;
     if (!buddyComment.trim()) {
       setBlockReason('Add a short note on what you noticed so the support message feels grounded.');
       return;
@@ -892,9 +1126,11 @@ function BuddyTapScreen({ state, updateState }) {
       return;
     }
 
-    const member = buddyTapSelectableMembers.find((m) => m.id === buddyId);
+    const member = selectableBuddies.find((m) => m.id === buddyId);
     const priorCount = taps.filter((tap) => tap.toUserId === buddyId).length;
     const newCount = priorCount + 1;
+
+    dbService.saveBuddyTap(state.auth.profile?.supabaseId, buddyId, buddyComment.trim());
 
     updateState((current) => ({
       ...current,
@@ -910,6 +1146,30 @@ function BuddyTapScreen({ state, updateState }) {
     setSubmittedConcern(true);
 
     if (newCount >= 3) {
+      const outreachReason = 'A few people in your unit noticed you may be having a rough week.';
+      updateState((current) => {
+        const prompts = current.support?.outreachPrompts || [];
+        const hasOpenPrompt = prompts.some((prompt) => prompt.userId === buddyId && prompt.status !== 'dismissed');
+        if (!hasOpenPrompt) dbService.saveOutreachPrompt(buddyId, outreachReason);
+        return {
+          ...current,
+          support: {
+            ...current.support,
+            outreachPrompts: hasOpenPrompt
+              ? prompts
+              : [
+                  ...prompts,
+                  {
+                    id: `outreach-${buddyId}-${Date.now()}`,
+                    userId: buddyId,
+                    status: 'pending',
+                    createdAt: new Date().toISOString(),
+                    reason: outreachReason,
+                  },
+                ],
+          },
+        };
+      });
       setThresholdNotice(notify('buddy_threshold', { recipientName: member?.name }));
     }
   };
@@ -927,7 +1187,6 @@ function BuddyTapScreen({ state, updateState }) {
         subtitle="Anonymous single-action concern flag. Three independent taps trigger a supportive message directly to the person."
       />
       <div className="badge-row">
-        <span className="info-badge">Taps this week: {weeklyCount}</span>
         <span className="info-badge">No commander is notified. No one is identified.</span>
       </div>
       <div className="buddy-card">
@@ -936,7 +1195,7 @@ function BuddyTapScreen({ state, updateState }) {
         {!submittedConcern ? (
           <>
             <select value={buddyId} onChange={(event) => setBuddyId(event.target.value)}>
-              {buddyTapSelectableMembers.map((member) => (
+              {selectableBuddies.map((member) => (
                 <option key={member.id} value={member.id}>
                   {member.rank} {member.name}
                 </option>
@@ -971,12 +1230,14 @@ function BuddyTapScreen({ state, updateState }) {
       {thresholdNotice && (
         <Modal title={thresholdNotice.title} onClose={() => setThresholdNotice(null)}>
           <p>{thresholdNotice.message}</p>
-          <p>{thresholdNotice.body}</p>
-          <ul className="resource-list">
-            {thresholdNotice.resources.map((line) => (
-              <li key={line}>{line}</li>
-            ))}
-          </ul>
+          {thresholdNotice.body && <p>{thresholdNotice.body}</p>}
+          {thresholdNotice.resources?.length > 0 && (
+            <ul className="resource-list">
+              {thresholdNotice.resources.map((line) => (
+                <li key={line}>{line}</li>
+              ))}
+            </ul>
+          )}
           <small>{thresholdNotice.footer}</small>
           <button className="primary-button" onClick={() => setThresholdNotice(null)}>
             Close
@@ -987,12 +1248,152 @@ function BuddyTapScreen({ state, updateState }) {
   );
 }
 
+function todayIso() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+const BLANK_FORM = () => ({ pushups: '', situps: '', runMins: '', runSecs: '', date: todayIso() });
+
+function AttemptForm({ form, setForm }) {
+  const dateRef = useRef(null);
+  const clampSecs = (v) => String(Math.min(59, Math.max(0, parseInt(v) || 0))).padStart(2, '0');
+
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '18px 20px' }}>
+      {[
+        { label: 'PUSH-UPS', field: 'pushups', type: 'number', min: 0 },
+        { label: 'SIT-UPS',  field: 'situps',  type: 'number', min: 0 },
+      ].map(({ label, field, type, min }) => (
+        <div key={field}>
+          <div className="label" style={{ fontSize: 10, marginBottom: 6 }}>{label}</div>
+          <input
+            type={type}
+            min={min}
+            value={form[field]}
+            onChange={(e) => setForm({ ...form, [field]: e.target.value })}
+            style={{ width: '100%' }}
+            placeholder="—"
+          />
+        </div>
+      ))}
+      <div>
+        <div className="label" style={{ fontSize: 10, marginBottom: 6 }}>2.4KM RUN TIME</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <input
+            type="number" min="0" max="30"
+            value={form.runMins}
+            onChange={(e) => setForm({ ...form, runMins: e.target.value })}
+            style={{ width: '100%', textAlign: 'center' }}
+            placeholder="MM"
+          />
+          <span className="mono" style={{ color: 'var(--text-dim)', fontWeight: 700, fontSize: 18 }}>:</span>
+          <input
+            type="number" min="0" max="59"
+            value={form.runSecs}
+            onBlur={(e) => setForm({ ...form, runSecs: clampSecs(e.target.value) })}
+            onChange={(e) => setForm({ ...form, runSecs: e.target.value })}
+            style={{ width: '100%', textAlign: 'center' }}
+            placeholder="SS"
+          />
+        </div>
+        <div className="mono-dim" style={{ fontSize: 9, marginTop: 4 }}>MM : SS</div>
+      </div>
+      <div>
+        <div className="label" style={{ fontSize: 10, marginBottom: 6 }}>DATE</div>
+        <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+          <input
+            ref={dateRef}
+            type="date"
+            value={form.date}
+            onChange={(e) => setForm({ ...form, date: e.target.value })}
+            style={{ width: '100%', paddingRight: 36 }}
+          />
+          <button
+            type="button"
+            onClick={() => { try { dateRef.current?.showPicker(); } catch { dateRef.current?.click(); } }}
+            style={{
+              position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)',
+              background: 'none', border: 'none', cursor: 'pointer', padding: 0,
+              color: 'var(--text-dim)', fontSize: 16, lineHeight: 1,
+            }}
+            title="Open calendar"
+          >
+            📅
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const SWIM_PASS_SECONDS = 50 * 60; // NDU 2km sea swim pass standard: 50 minutes
+
+const BLANK_SWIM_FORM = () => ({ swimMins: '', swimSecs: '', date: todayIso() });
+
+function SwimAttemptForm({ form, setForm }) {
+  const dateRef = useRef(null);
+  const clampSecs = (v) => String(Math.min(59, Math.max(0, parseInt(v) || 0))).padStart(2, '0');
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+      <div>
+        <div className="label" style={{ fontSize: 10, marginBottom: 6 }}>2KM SEA SWIM TIME</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <input
+            type="number" min="0" max="120" placeholder="MM"
+            value={form.swimMins}
+            onChange={(e) => setForm({ ...form, swimMins: e.target.value })}
+            style={{ width: 64, textAlign: 'center' }}
+          />
+          <span style={{ color: 'var(--text-dim)', fontSize: 18, fontFamily: 'var(--font-mono)' }}>:</span>
+          <input
+            type="number" min="0" max="59" placeholder="SS"
+            value={form.swimSecs}
+            onBlur={(e) => setForm({ ...form, swimSecs: clampSecs(e.target.value) })}
+            onChange={(e) => setForm({ ...form, swimSecs: e.target.value })}
+            style={{ width: 64, textAlign: 'center' }}
+          />
+        </div>
+        <div className="mono-dim" style={{ fontSize: 9, marginTop: 4 }}>MM : SS (max 120 min)</div>
+      </div>
+      <div>
+        <div className="label" style={{ fontSize: 10, marginBottom: 6 }}>DATE</div>
+        <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+          <input
+            ref={dateRef} type="date" value={form.date}
+            onChange={(e) => setForm({ ...form, date: e.target.value })}
+            style={{ width: '100%', paddingRight: 36 }}
+          />
+          <button
+            type="button"
+            onClick={() => { try { dateRef.current?.showPicker(); } catch { dateRef.current?.click(); } }}
+            style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: 'var(--text-dim)', fontSize: 16, lineHeight: 1 }}
+            title="Open calendar"
+          >📅</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function TrainScreen({ state, updateState }) {
-  const [showModal, setShowModal] = useState(false);
-  const [form, setForm] = useState({ pushups: '', situps: '', runTime: '12:30', date: isoDate(getToday()) });
+  const navigate = useNavigate();
+  const [showModal, setShowModal]     = useState(false);
+  const [form, setForm]               = useState(BLANK_FORM());
+  const [editIdx, setEditIdx]         = useState(null);
+  const [editForm, setEditForm]       = useState(null);
+  const [highlightedAttempt, setHighlightedAttempt] = useState(null);
+  const [pbModal, setPbModal]         = useState(null);
+  const historyRef = useRef(null);
+
+  // Sea swim state
+  const [showSwimModal, setShowSwimModal] = useState(false);
+  const [swimForm, setSwimForm]           = useState(BLANK_SWIM_FORM());
+  const [swimEditIdx, setSwimEditIdx]     = useState(null);
+  const [swimEditForm, setSwimEditForm]   = useState(null);
 
   const attempts = state.ippt.attempts;
-  const latest = attempts.length ? attempts[attempts.length - 1] : null;
+  const latest   = attempts.length ? attempts[attempts.length - 1] : null;
 
   const latestScore = latest
     ? calculateIpptScore(latest.pushups, latest.situps, latest.runSeconds)
@@ -1006,45 +1407,218 @@ function TrainScreen({ state, updateState }) {
       }
     : null;
 
-  const GOAL_MAP = { Gold: 85, Silver: 75, 'Pass with Incentive': 61, Pass: 61 };
+  const GOAL_MAP  = { Gold: 85, Silver: 75, 'Pass with Incentive': 61, Pass: 51 };
   const goalName  = state.onboarding.ipptGoal || 'Pass';
   const goalScore = GOAL_MAP[goalName] ?? 61;
+
+  const pbs     = attempts.length ? getPbs(attempts) : null;
+  const profile = state.auth.profile;
+  const accountId = profile?.id || 'recruit-tan';
+
+  const feed = state.social?.trainingFeed ?? trainingActivity ?? [];
+
+  // Sea swim derivations
+  const swimAttempts    = state.swim?.attempts || [];
+  const swimLatest      = swimAttempts.length ? swimAttempts[swimAttempts.length - 1] : null;
+  const swimPbSeconds   = swimAttempts.length ? Math.min(...swimAttempts.map((a) => a.timeSeconds)) : null;
+  const swimPassed      = swimLatest ? swimLatest.timeSeconds <= SWIM_PASS_SECONDS : null;
+  const swimFormToSecs  = (f) => (parseInt(f.swimMins) || 0) * 60 + (parseInt(f.swimSecs) || 0);
+
+  const handleChartDotClick = (chartIdx) => {
+    setHighlightedAttempt(chartIdx);
+    historyRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    setTimeout(() => setHighlightedAttempt(null), 2000);
+  };
 
   const chartSeries = attempts.map((a) => ({
     v:     calculateIpptScore(a.pushups, a.situps, a.runSeconds).score,
     label: shortDate(a.date),
   }));
 
-  const submitAttempt = () => {
-    const runSeconds = toSeconds(form.runTime);
-    if (!form.pushups || !form.situps || !runSeconds) return;
+  const formToSeconds = (f) => (parseInt(f.runMins) || 0) * 60 + (parseInt(f.runSecs) || 0);
 
-    updateState((current) => ({
-      ...current,
+  const submitAttempt = async () => {
+    const runSeconds = formToSeconds(form);
+    if (!form.pushups || !form.situps || !runSeconds) return;
+    const pushups = Number(form.pushups);
+    const situps  = Number(form.situps);
+    const newAttempt = { date: form.date, pushups, situps, runSeconds };
+
+    // Detect new personal bests before state update
+    const newPbs = [];
+    if (!attempts.length || pushups > (pbs?.pushups ?? 0))
+      newPbs.push({ exercise: 'Push-ups', value: `${pushups} reps` });
+    if (!attempts.length || situps > (pbs?.situps ?? 0))
+      newPbs.push({ exercise: 'Sit-ups', value: `${situps} reps` });
+    if (!attempts.length || runSeconds < (pbs?.runSeconds ?? 99999))
+      newPbs.push({ exercise: '2.4km Run', value: formatRunTime(runSeconds) });
+
+    const dbId = await dbService.saveIpptAttempt(state.auth.profile?.supabaseId, newAttempt);
+    const attempt = { ...newAttempt, _dbId: dbId };
+
+    updateState((c) => ({
+      ...c,
       ippt: {
-        attempts: [
-          ...current.ippt.attempts,
-          { date: form.date, pushups: Number(form.pushups), situps: Number(form.situps), runSeconds },
-        ],
+        ...c.ippt,
+        attempts: [...c.ippt.attempts, attempt],
+        attemptsByAccount: {
+          ...(c.ippt.attemptsByAccount || {}),
+          [accountId]: [...c.ippt.attempts, attempt],
+        },
       },
     }));
-
     setShowModal(false);
+    setForm(BLANK_FORM());
+
+    if (newPbs.length > 0) {
+      setPbModal({ newPbs, newAttemptIdx: attempts.length });
+    }
+  };
+
+  const openEdit = (originalIdx) => {
+    const a = attempts[originalIdx];
+    const totalSecs = a.runSeconds;
+    setEditIdx(originalIdx);
+    setEditForm({
+      pushups: String(a.pushups),
+      situps:  String(a.situps),
+      runMins: String(Math.floor(totalSecs / 60)),
+      runSecs: String(totalSecs % 60).padStart(2, '0'),
+      date:    a.date,
+    });
+  };
+
+  const saveEdit = () => {
+    const runSeconds = formToSeconds(editForm);
+    if (!editForm.pushups || !editForm.situps || !runSeconds) return;
+    const updated_attempt = { date: editForm.date, pushups: Number(editForm.pushups), situps: Number(editForm.situps), runSeconds };
+    updateState((c) => {
+      const updated = [...c.ippt.attempts];
+      const dbId = updated[editIdx]?._dbId;
+      updated[editIdx] = { ...updated_attempt, _dbId: dbId };
+      dbService.updateIpptAttempt(dbId, updated_attempt);
+      return {
+        ...c,
+        ippt: {
+          ...c.ippt,
+          attempts: updated,
+          attemptsByAccount: { ...(c.ippt.attemptsByAccount || {}), [accountId]: updated },
+        },
+      };
+    });
+    setEditIdx(null);
+    setEditForm(null);
+  };
+
+  const deleteAttempt = (originalIdx) => {
+    updateState((c) => {
+      const dbId = c.ippt.attempts[originalIdx]?._dbId;
+      dbService.deleteIpptAttempt(dbId);
+      const updated = c.ippt.attempts.filter((_, i) => i !== originalIdx);
+      return {
+        ...c,
+        ippt: {
+          ...c.ippt,
+          attempts: updated,
+          attemptsByAccount: { ...(c.ippt.attemptsByAccount || {}), [accountId]: updated },
+        },
+      };
+    });
+    setEditIdx(null);
+    setEditForm(null);
+  };
+
+  const submitSwimAttempt = async () => {
+    const timeSeconds = swimFormToSecs(swimForm);
+    if (!timeSeconds) return;
+    const newAttempt = { date: swimForm.date, timeSeconds };
+    const isNewPb = !swimAttempts.length || timeSeconds < (swimPbSeconds ?? 99999);
+    const dbId = await dbService.saveSwimAttempt(state.auth.profile?.supabaseId, newAttempt);
+    const attempt = { ...newAttempt, _dbId: dbId };
+    updateState((c) => ({ ...c, swim: { ...c.swim, attempts: [...(c.swim?.attempts || []), attempt] } }));
+    setShowSwimModal(false);
+    setSwimForm(BLANK_SWIM_FORM());
+    if (isNewPb) setPbModal({ newPbs: [{ exercise: '2km Sea Swim', value: formatRunTime(timeSeconds) }], newAttemptIdx: swimAttempts.length });
+  };
+
+  const openSwimEdit = (idx) => {
+    const a = swimAttempts[idx];
+    setSwimEditIdx(idx);
+    setSwimEditForm({ swimMins: String(Math.floor(a.timeSeconds / 60)), swimSecs: String(a.timeSeconds % 60).padStart(2, '0'), date: a.date });
+  };
+
+  const saveSwimEdit = () => {
+    const timeSeconds = swimFormToSecs(swimEditForm);
+    if (!timeSeconds) return;
+    const updated_attempt = { date: swimEditForm.date, timeSeconds };
+    updateState((c) => {
+      const updated = [...(c.swim?.attempts || [])];
+      const dbId = updated[swimEditIdx]?._dbId;
+      updated[swimEditIdx] = { ...updated_attempt, _dbId: dbId };
+      dbService.updateSwimAttempt(dbId, updated_attempt);
+      return { ...c, swim: { ...c.swim, attempts: updated } };
+    });
+    setSwimEditIdx(null);
+    setSwimEditForm(null);
+  };
+
+  const deleteSwimAttempt = (idx) => {
+    updateState((c) => {
+      const dbId = (c.swim?.attempts || [])[idx]?._dbId;
+      dbService.deleteSwimAttempt(dbId);
+      return { ...c, swim: { ...c.swim, attempts: (c.swim?.attempts || []).filter((_, i) => i !== idx) } };
+    });
+    setSwimEditIdx(null);
+    setSwimEditForm(null);
   };
 
   const stationRows = [
-    { label: 'PUSH-UPS',   val: latest?.pushups,                             pts: stationPts?.pushups, max: 25 },
-    { label: 'SIT-UPS',    val: latest?.situps,                              pts: stationPts?.situps,  max: 25 },
-    { label: '2.4KM RUN',  val: latest ? formatRunTime(latest.runSeconds) : null, pts: stationPts?.run, max: 50 },
+    { label: 'PUSH-UPS',  val: latest?.pushups,                                  pts: stationPts?.pushups, max: 25 },
+    { label: 'SIT-UPS',   val: latest?.situps,                                   pts: stationPts?.situps,  max: 25 },
+    { label: '2.4KM RUN', val: latest ? formatRunTime(latest.runSeconds) : null,  pts: stationPts?.run,     max: 50 },
   ];
+
+  const goalColors = { Gold: 'var(--amber)', Silver: '#9ca3af', 'Pass with Incentive': 'var(--accent-text)', Pass: 'var(--accent-text)' };
+  const goalColor  = goalColors[goalName] || 'var(--accent-text)';
 
   return (
     <div style={{ height: '100%', overflow: 'auto', padding: '28px 36px' }}>
-      <h1 className="h-display" style={{ fontSize: 48, marginBottom: 24 }}>IPPT TRACKER</h1>
+      <span className="label" style={{ color: 'var(--accent-text)', marginBottom: 8, display: 'block' }}>
+        ▲ SERVE · WORKOUT TRACKER
+      </span>
+      <h1 className="h-display" style={{ fontSize: 52, marginBottom: 10 }}>WORKOUT TRACKER</h1>
+
+      {/* GOAL SUB-HEADER */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 28, paddingBottom: 20, borderBottom: '1px solid var(--border)' }}>
+        <span className="mono-dim" style={{ fontSize: 12 }}>CURRENT TARGET</span>
+        <span style={{ width: 1, height: 14, background: 'var(--border)' }} />
+        <span style={{ fontFamily: 'var(--font-head)', fontWeight: 800, fontSize: 18, color: goalColor, letterSpacing: '0.04em' }}>
+          {goalName.toUpperCase()}
+        </span>
+        <span className="mono-dim" style={{ fontSize: 11 }}>{goalScore} PTS</span>
+      </div>
+
+      {/* PERSONAL BESTS */}
+      <Panel ticks style={{ padding: 26, marginBottom: 16 }}>
+        <span className="label" style={{ marginBottom: 18, display: 'block' }}>▲ PERSONAL BESTS · ALL TIME</span>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 0 }}>
+          {[
+            { label: 'PUSH-UPS',      value: pbs ? pbs.pushups : '—',                          unit: 'REPS',  color: 'var(--amber)' },
+            { label: 'SIT-UPS',       value: pbs ? pbs.situps : '—',                            unit: 'REPS',  color: 'var(--amber)' },
+            { label: '2.4KM RUN',     value: pbs ? formatRunTime(pbs.runSeconds) : '—',          unit: 'MM:SS', color: 'var(--amber)' },
+            { label: '2KM SEA SWIM',  value: swimPbSeconds != null ? formatRunTime(swimPbSeconds) : '—', unit: 'MM:SS', color: 'var(--accent-text)' },
+          ].map(({ label, value, unit, color }, i, arr) => (
+            <div key={label} style={{ textAlign: 'center', padding: '8px 16px', borderRight: i < arr.length - 1 ? '1px solid var(--border)' : 'none' }}>
+              <div style={{ fontFamily: 'var(--font-head)', fontWeight: 900, fontSize: 56, lineHeight: 1, color, marginBottom: 10 }}>{value}</div>
+              <div className="label" style={{ marginBottom: 2 }}>{label}</div>
+              <div className="mono-dim" style={{ fontSize: 9 }}>{unit}</div>
+            </div>
+          ))}
+        </div>
+      </Panel>
 
       {/* Row 1: 2-column overview */}
       <div style={{ display: 'grid', gridTemplateColumns: '1.1fr 1.4fr', gap: 16, marginBottom: 16 }}>
-        {/* CURRENT STANDING */}
         <Panel ticks style={{ padding: 26 }}>
           <span className="label" style={{ marginBottom: 18, display: 'block' }}>CURRENT STANDING</span>
           <div style={{ fontFamily: 'var(--font-head)', fontWeight: 900, fontSize: 76, lineHeight: 1, color: 'var(--amber)', marginBottom: 14 }}>
@@ -1057,25 +1631,38 @@ function TrainScreen({ state, updateState }) {
               <span className="mono-dim">{goalScore} PTS</span>
             </div>
             <div style={{ height: 6, background: 'var(--bg)', borderRadius: 3, overflow: 'hidden' }}>
-              <div style={{
-                width: `${Math.min(100, ((latestScore?.score ?? 0) / goalScore) * 100)}%`,
-                height: '100%',
-                background: 'var(--amber)',
-                borderRadius: 3,
-                transition: 'width 0.4s ease',
-              }} />
+              <div style={{ width: `${Math.min(100, ((latestScore?.score ?? 0) / goalScore) * 100)}%`, height: '100%', background: 'var(--amber)', borderRadius: 3, transition: 'width 0.4s ease' }} />
             </div>
             <div className="mono-dim" style={{ marginTop: 6, textAlign: 'right' }}>
               {latestScore ? `${latestScore.score} / ${goalScore}` : `0 / ${goalScore}`}
             </div>
           </div>
+          {/* Sea swim pass/fail */}
+          <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+              <span className="mono-dim" style={{ fontSize: 10 }}>2KM SEA SWIM</span>
+              <span style={{
+                fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 700, letterSpacing: '0.08em',
+                color: swimPassed === null ? 'var(--text-faint)' : swimPassed ? 'var(--success)' : '#f87171',
+              }}>
+                {swimPassed === null ? 'NO ATTEMPT' : swimPassed ? 'PASS' : 'FAIL'}
+              </span>
+            </div>
+            {swimLatest && (
+              <div className="mono-dim" style={{ fontSize: 10 }}>
+                {formatRunTime(swimLatest.timeSeconds)} · std {formatRunTime(SWIM_PASS_SECONDS)}
+              </div>
+            )}
+          </div>
         </Panel>
 
-        {/* STATION BREAKDOWN */}
         <Panel ticks style={{ padding: 26 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-            <span className="label">STATION BREAKDOWN · LATEST</span>
-            <button className="btn ghost sm" onClick={() => setShowModal(true)}>LOG ATTEMPT</button>
+            <span className="label">▲ STATION BREAKDOWN · LATEST</span>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button className="btn ghost sm" onClick={() => { setForm(BLANK_FORM()); setShowModal(true); }}>LOG IPPT</button>
+              <button className="btn ghost sm" onClick={() => { setSwimForm(BLANK_SWIM_FORM()); setShowSwimModal(true); }}>LOG SWIM</button>
+            </div>
           </div>
           {stationRows.map((s) => (
             <div key={s.label} style={{ marginBottom: 18 }}>
@@ -1086,22 +1673,35 @@ function TrainScreen({ state, updateState }) {
                 </span>
               </div>
               <div style={{ height: 4, background: 'var(--bg)', borderRadius: 2, overflow: 'hidden' }}>
-                <div style={{
-                  width: `${s.pts != null ? (s.pts / s.max) * 100 : 0}%`,
-                  height: '100%',
-                  background: 'var(--amber)',
-                  borderRadius: 2,
-                }} />
+                <div style={{ width: `${s.pts != null ? (s.pts / s.max) * 100 : 0}%`, height: '100%', background: 'var(--amber)', borderRadius: 2 }} />
               </div>
               <div className="mono-dim" style={{ marginTop: 3 }}>
                 {s.pts != null ? `${s.pts} / ${s.max} pts` : '—'}
               </div>
             </div>
           ))}
+          {/* Sea swim station */}
+          <div style={{ paddingTop: 14, borderTop: '1px solid var(--border)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 5 }}>
+              <span className="label" style={{ fontSize: 10 }}>2KM SEA SWIM</span>
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 22, color: 'var(--accent-text)', fontVariantNumeric: 'tabular-nums' }}>
+                {swimLatest ? formatRunTime(swimLatest.timeSeconds) : '—'}
+              </span>
+            </div>
+            <div style={{ height: 4, background: 'var(--bg)', borderRadius: 2, overflow: 'hidden' }}>
+              <div style={{
+                width: swimLatest ? `${Math.min(100, (SWIM_PASS_SECONDS / swimLatest.timeSeconds) * 80)}%` : '0%',
+                height: '100%', background: swimPassed ? 'var(--success)' : 'var(--accent-text)', borderRadius: 2,
+              }} />
+            </div>
+            <div className="mono-dim" style={{ fontSize: 10, marginTop: 3 }}>
+              {swimPassed === null ? `NO ATTEMPT · STD ${formatRunTime(SWIM_PASS_SECONDS)}` : swimPassed ? 'PASS' : `FAIL · STD ${formatRunTime(SWIM_PASS_SECONDS)}`}
+            </div>
+          </div>
         </Panel>
       </div>
 
-      {/* SCORE PROGRESSION chart */}
+      {/* SCORE PROGRESSION */}
       <Panel ticks style={{ padding: 26, marginBottom: 16 }}>
         <span className="label" style={{ marginBottom: 16, display: 'block' }}>IPPT SCORE PROGRESSION</span>
         {chartSeries.length > 0 ? (
@@ -1113,8 +1713,10 @@ function TrainScreen({ state, updateState }) {
               yMin={0}
               height={200}
               goal={goalScore}
+              goalLabel={`Goal: ${goalName} (${goalScore})`}
               color="var(--amber)"
               fmt={(v) => String(Math.round(v))}
+              onDotClick={handleChartDotClick}
             />
             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 28px 0' }}>
               {chartSeries.map((d) => (
@@ -1129,120 +1731,763 @@ function TrainScreen({ state, updateState }) {
         )}
       </Panel>
 
+      {/* WEEKEND PLANNER CTA */}
+      <Panel elevated style={{ padding: 24, marginBottom: 16, borderColor: 'var(--accent-line)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
+          <span style={{ fontSize: 36, lineHeight: 1 }}>🗓</span>
+          <div style={{ flex: 1 }}>
+            <div className="label" style={{ color: 'var(--accent-text)', marginBottom: 6 }}>▲ AI-CURATED TRAINING</div>
+            <div className="h-title" style={{ fontSize: 17, marginBottom: 5 }}>Weekend Planner / Vocation-Based Training Plan</div>
+            <p style={{ color: 'var(--text-dim)', fontSize: 13, margin: 0 }}>
+              Personalised for your attempt history, PES {profile.pesStatus},{' '}
+              {(profile.vocation || 'General').toUpperCase()} vocation, and {goalName} target.
+            </p>
+          </div>
+          <button className="btn" style={{ flexShrink: 0, padding: '10px 18px' }} onClick={() => navigate('/weekend-planner')}>
+            OPEN PLAN →
+          </button>
+        </div>
+      </Panel>
+
       {/* ATTEMPT HISTORY */}
-      <Panel ticks style={{ padding: 26 }}>
-        <span className="label" style={{ marginBottom: 16, display: 'block' }}>IPPT ATTEMPT HISTORY</span>
-        {attempts.length > 0 ? (
+      <div ref={historyRef}>
+        <Panel ticks style={{ padding: 26, marginBottom: 16 }}>
+          <span className="label" style={{ marginBottom: 16, display: 'block' }}>▲ IPPT ATTEMPT HISTORY</span>
+          {attempts.length > 0 ? (
+            <>
+              <div className="attempt-history-grid attempt-history-head">
+                {['DATE', 'PUSH-UPS', 'SIT-UPS', '2.4KM', 'PTS', 'AWARD', ''].map((h) => (
+                  <span key={h} className="label" style={{ fontSize: 10 }}>{h}</span>
+                ))}
+              </div>
+              {[...attempts].reverse().map((attempt, reversedI) => {
+                const sc          = calculateIpptScore(attempt.pushups, attempt.situps, attempt.runSeconds);
+                const originalIdx = attempts.length - 1 - reversedI;
+                const isHighlighted = highlightedAttempt === originalIdx;
+                return (
+                  <div key={reversedI} className={`attempt-history-grid${isHighlighted ? ' attempt-glow' : ''}`}>
+                    <span className="mono-dim">{shortDate(attempt.date)}</span>
+                    <span className="mono">{attempt.pushups}</span>
+                    <span className="mono">{attempt.situps}</span>
+                    <span className="mono">{formatRunTime(attempt.runSeconds)}</span>
+                    <span className="mono" style={{ color: 'var(--amber)', fontWeight: 700 }}>{sc.score}</span>
+                    <Award award={sc.award} />
+                    <button
+                      onClick={() => openEdit(originalIdx)}
+                      title="Edit attempt"
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-faint)', padding: 0, fontSize: 13, lineHeight: 1 }}
+                    >
+                      ✎
+                    </button>
+                  </div>
+                );
+              })}
+            </>
+          ) : (
+            <div className="mono-dim" style={{ padding: '20px 0', textAlign: 'center' }}>No attempts logged yet.</div>
+          )}
+        </Panel>
+      </div>
+
+      {/* 2KM SEA SWIM HISTORY */}
+      <Panel ticks style={{ padding: 26, marginBottom: 16 }}>
+        <span className="label" style={{ marginBottom: 16, display: 'block' }}>▲ 2KM SEA SWIM · ATTEMPT HISTORY</span>
+        {swimAttempts.length > 0 ? (
           <>
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: '110px repeat(3, 1fr) 70px 100px',
-              padding: '0 0 8px',
-              borderBottom: '1px solid var(--border)',
-            }}>
-              {['DATE', 'PUSH-UPS', 'SIT-UPS', '2.4KM', 'PTS', 'AWARD'].map((h) => (
-                <span key={h} className="label">{h}</span>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: '8px 16px', marginBottom: 8 }}>
+              {['DATE', 'TIME', 'RESULT', ''].map((h) => (
+                <span key={h} className="label" style={{ fontSize: 10 }}>{h}</span>
               ))}
             </div>
-            {[...attempts].reverse().map((attempt, i) => {
-              const sc = calculateIpptScore(attempt.pushups, attempt.situps, attempt.runSeconds);
+            {[...swimAttempts].reverse().map((attempt, i) => {
+              const passed = attempt.timeSeconds <= SWIM_PASS_SECONDS;
+              const origIdx = swimAttempts.length - 1 - i;
               return (
-                <div key={i} style={{
-                  display: 'grid',
-                  gridTemplateColumns: '110px repeat(3, 1fr) 70px 100px',
-                  padding: '11px 0',
-                  borderBottom: '1px solid var(--border)',
-                  alignItems: 'center',
-                }}>
+                <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: '8px 16px', padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
                   <span className="mono-dim">{shortDate(attempt.date)}</span>
-                  <span className="mono">{attempt.pushups}</span>
-                  <span className="mono">{attempt.situps}</span>
-                  <span className="mono">{formatRunTime(attempt.runSeconds)}</span>
-                  <span className="mono" style={{ color: 'var(--amber)', fontWeight: 700 }}>{sc.score}</span>
-                  <Award award={sc.award} />
+                  <span className="mono" style={{ color: 'var(--accent-text)' }}>{formatRunTime(attempt.timeSeconds)}</span>
+                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, fontWeight: 700, color: passed ? 'var(--success)' : '#f87171' }}>
+                    {passed ? 'PASS' : 'FAIL'}
+                  </span>
+                  <button
+                    onClick={() => openSwimEdit(origIdx)}
+                    title="Edit"
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-faint)', padding: 0, fontSize: 13 }}
+                  >✎</button>
                 </div>
               );
             })}
           </>
         ) : (
-          <div className="mono-dim" style={{ padding: '20px 0', textAlign: 'center' }}>
-            No attempts logged yet.
-          </div>
+          <div className="mono-dim" style={{ padding: '20px 0', textAlign: 'center' }}>No sea swim attempts logged yet.</div>
         )}
       </Panel>
 
+      {/* TRAINING FEED */}
+      {feed.length > 0 && (
+        <Panel ticks style={{ padding: 26, cursor: 'pointer' }} onClick={() => navigate('/training-feed')}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+            <span className="label">▲ TRAINING FEED · UNIT ACTIVITY</span>
+            <span className="mono-dim" style={{ fontSize: 10 }}>VIEW ALL →</span>
+          </div>
+          {feed.map((item) => (
+            <div key={item.id} style={{ display: 'flex', gap: 14, padding: '12px 0', borderBottom: '1px solid var(--border)', alignItems: 'flex-start' }}>
+              <div style={{ width: 32, height: 32, borderRadius: 4, background: 'var(--accent-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <span style={{ fontSize: 14, color: 'var(--accent-text)' }}>▲</span>
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
+                  <span className="mono" style={{ fontSize: 13 }}>{item.name}</span>
+                  <span className="mono-dim" style={{ fontSize: 10 }}>{item.recency}</span>
+                </div>
+                <div style={{ marginBottom: 3 }}>
+                  {(item.chips || []).map((c) => (
+                    <span key={c} className="info-badge" style={{ marginRight: 4, fontSize: 10 }}>{c}</span>
+                  ))}
+                </div>
+                <span style={{ color: 'var(--text-dim)', fontSize: 13 }}>{item.detail}</span>
+              </div>
+              <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                <div style={{ fontFamily: 'var(--font-head)', fontWeight: 800, fontSize: 20, color: 'var(--amber)' }}>{item.statline}</div>
+              </div>
+            </div>
+          ))}
+        </Panel>
+      )}
+
+      {/* LOG SWIM MODAL */}
+      {showSwimModal && (
+        <Modal title="Log 2km Sea Swim" onClose={() => setShowSwimModal(false)}>
+          <SwimAttemptForm form={swimForm} setForm={setSwimForm} />
+          <button className="primary-button" style={{ marginTop: 20, width: '100%' }} onClick={submitSwimAttempt}>
+            SAVE ATTEMPT
+          </button>
+        </Modal>
+      )}
+
+      {/* EDIT SWIM MODAL */}
+      {swimEditIdx !== null && swimEditForm && (
+        <Modal title="Edit Sea Swim Attempt" onClose={() => { setSwimEditIdx(null); setSwimEditForm(null); }}>
+          <SwimAttemptForm form={swimEditForm} setForm={setSwimEditForm} />
+          <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
+            <button className="primary-button" style={{ flex: 1 }} onClick={saveSwimEdit}>SAVE CHANGES</button>
+            <button
+              onClick={() => deleteSwimAttempt(swimEditIdx)}
+              style={{ padding: '10px 18px', background: 'none', border: '1px solid #7f1d1d', color: '#f87171', borderRadius: 4, cursor: 'pointer', fontFamily: 'var(--font-mono)', fontSize: 12, letterSpacing: '0.06em' }}
+            >DELETE</button>
+          </div>
+        </Modal>
+      )}
+
+      {/* LOG ATTEMPT MODAL */}
       {showModal && (
         <Modal title="Log IPPT Attempt" onClose={() => setShowModal(false)}>
-          <div className="modal-grid">
-            <input
-              type="number"
-              placeholder="Push-up reps"
-              value={form.pushups}
-              onChange={(event) => setForm({ ...form, pushups: event.target.value })}
-            />
-            <input
-              type="number"
-              placeholder="Sit-up reps"
-              value={form.situps}
-              onChange={(event) => setForm({ ...form, situps: event.target.value })}
-            />
-            <input
-              type="text"
-              placeholder="2.4km MM:SS"
-              value={form.runTime}
-              onChange={(event) => setForm({ ...form, runTime: event.target.value })}
-            />
-            <input type="date" value={form.date} onChange={(event) => setForm({ ...form, date: event.target.value })} />
-          </div>
-          <button className="primary-button" onClick={submitAttempt}>
-            Save attempt
+          <AttemptForm form={form} setForm={setForm} />
+          <button className="primary-button" style={{ marginTop: 20, width: '100%' }} onClick={submitAttempt}>
+            SAVE ATTEMPT
           </button>
+        </Modal>
+      )}
+
+      {/* EDIT ATTEMPT MODAL */}
+      {editIdx !== null && editForm && (
+        <Modal title="Edit Attempt" onClose={() => { setEditIdx(null); setEditForm(null); }}>
+          <AttemptForm form={editForm} setForm={setEditForm} />
+          <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
+            <button className="primary-button" style={{ flex: 1 }} onClick={saveEdit}>SAVE CHANGES</button>
+            <button
+              onClick={() => deleteAttempt(editIdx)}
+              style={{ padding: '10px 18px', background: 'none', border: '1px solid #7f1d1d', color: '#f87171', borderRadius: 4, cursor: 'pointer', fontFamily: 'var(--font-mono)', fontSize: 12, letterSpacing: '0.06em' }}
+            >
+              DELETE
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {/* PERSONAL BEST CELEBRATION MODAL */}
+      {pbModal && (
+        <Modal title="New Personal Best 🏆" onClose={() => setPbModal(null)}>
+          <p style={{ color: 'var(--text-dim)', fontSize: 14, marginBottom: 18 }}>
+            You just broke your personal record. Share it with your unit on the Training Feed.
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 24 }}>
+            {pbModal.newPbs.map(({ exercise, value }) => (
+              <div key={exercise} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', borderRadius: 6, background: 'var(--accent-soft)', border: '1px solid var(--accent-line)' }}>
+                <span className="label" style={{ fontSize: 12, color: 'var(--accent-text)' }}>{exercise}</span>
+                <span style={{ fontFamily: 'var(--font-head)', fontWeight: 800, fontSize: 22, color: 'var(--amber)' }}>{value}</span>
+              </div>
+            ))}
+          </div>
+          <div style={{ display: 'flex', gap: 10 }}>
+            <button
+              className="primary-button"
+              style={{ flex: 1 }}
+              onClick={() => {
+                setPbModal(null);
+                navigate('/training-feed', { state: { autoCompose: true, attemptIdx: pbModal.newAttemptIdx } });
+              }}
+            >
+              SHARE TO TRAINING FEED
+            </button>
+            <button
+              onClick={() => setPbModal(null)}
+              style={{ padding: '10px 18px', background: 'none', border: '1px solid var(--border)', color: 'var(--text-dim)', borderRadius: 4, cursor: 'pointer', fontFamily: 'var(--font-mono)', fontSize: 12, letterSpacing: '0.06em' }}
+            >
+              DISMISS
+            </button>
+          </div>
         </Modal>
       )}
     </div>
   );
 }
 
-function WeekendPlannerScreen({ state, activeModule }) {
-  const profile = state.auth.profile;
-  const weekendPlanner = getWeekendPlanner(profile, state.onboarding.ipptGoal, state.ippt.attempts);
+// ─── TRAINING FEED ───────────────────────────────────────────────────────────
+
+const FEELINGS = [
+  { emoji: '🏆', label: 'Proud'     },
+  { emoji: '💪', label: 'Motivated' },
+  { emoji: '😊', label: 'Happy'     },
+  { emoji: '🔥', label: 'On Fire'   },
+  { emoji: '🎯', label: 'Focused'   },
+  { emoji: '😮‍💨', label: 'Relieved'  },
+  { emoji: '😤', label: 'Exhausted' },
+  { emoji: '😐', label: 'Neutral'   },
+];
+
+const REACTIONS = [
+  { key: 'cheer',   emoji: '💪' },
+  { key: 'fire',    emoji: '🔥' },
+  { key: 'respect', emoji: '🫡' },
+];
+
+function FeedPostCard({ post, onReact, onAddReply, onDelete, isOwn }) {
+  const [repliesOpen, setRepliesOpen] = useState(false);
+  const [replyText, setReplyText]     = useState('');
+  const [replyError, setReplyError]   = useState('');
+  const [submitting, setSubmitting]   = useState(false);
+
+  const handleReply = async () => {
+    const text = replyText.trim();
+    if (!text) return;
+    setSubmitting(true);
+    const result = await nlpService.moderate(text);
+    if (!result.approved) {
+      setReplyError(result.reason || 'Please keep your comment kind and constructive.');
+      setSubmitting(false);
+      return;
+    }
+    onAddReply(post.id, text);
+    setReplyText('');
+    setReplyError('');
+    setSubmitting(false);
+  };
 
   return (
-    <section>
-      <ScreenHeader
-        title="Weekend IPPT Planner"
-        subtitle={
-          activeModule === 'serve'
-            ? 'A dedicated two-day workout block based on your current IPPT band and service vocation.'
-            : 'A dedicated two-day workout block based on your current IPPT band and target.'
-        }
-      />
-      <div className="badge-row">
-        <span className="info-badge">PES {profile.pesStatus}</span>
-        <span className="info-badge">{profile.vocation}</span>
-        <span className="info-badge">{state.onboarding.ipptGoal}</span>
-      </div>
-      <div className="weekend-planner-card static">
-        <div className="weekend-planner-topline">
-          <div>
-            <p className="kicker">This Weekend</p>
-            <h3>IPPT/Vocation-Based Weekend Plan</h3>
+    <Panel ticks style={{ padding: 24 }}>
+      {/* Author row */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+          <div style={{ width: 38, height: 38, borderRadius: 6, background: 'var(--accent-soft)', display: 'grid', placeItems: 'center', color: 'var(--accent-text)', fontFamily: 'var(--font-head)', fontWeight: 800, fontSize: 16, flexShrink: 0 }}>
+            {(post.name || 'U')[0].toUpperCase()}
           </div>
-          <span className="info-badge">{profile.vocation}</span>
+          <div>
+            <div className="mono" style={{ fontSize: 14, fontWeight: 700 }}>{post.name}</div>
+            <div className="mono-dim" style={{ fontSize: 11 }}>{post.unit} · {post.recency}</div>
+          </div>
         </div>
-        <p className="weekend-planner-summary">{weekendPlanner.summary}</p>
-        <div className="horizontal-days weekend-days">
-          {weekendPlanner.days.map((day) => (
-            <article key={day.id} className="day-card">
-              <div className="day-card-header">
-                <span>{day.label}</span>
-                <strong>{day.duration}</strong>
-              </div>
-              <p>{day.workout}</p>
-            </article>
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+          {post.statline && (
+            <div style={{ fontFamily: 'var(--font-head)', fontWeight: 800, fontSize: 24, color: 'var(--amber)', lineHeight: 1 }}>
+              {post.statline}
+            </div>
+          )}
+          {onDelete && isOwn && (
+            <button
+              onClick={() => onDelete(post.id, post._dbId)}
+              title="Delete post"
+              style={{ all: 'unset', cursor: 'pointer', color: 'var(--text-faint)', fontSize: 15, lineHeight: 1, padding: '2px 4px' }}
+            >✕</button>
+          )}
+        </div>
+      </div>
+
+      {/* Chips */}
+      {post.chips?.length > 0 && (
+        <div className="badge-row" style={{ marginBottom: 10 }}>
+          {post.chips.map((c) => <span key={c} className="info-badge">{c}</span>)}
+        </div>
+      )}
+
+      {/* Title */}
+      {post.title && (
+        <div className="h-title" style={{ fontSize: 16, marginBottom: 8 }}>{post.title}</div>
+      )}
+
+      {/* Body */}
+      {post.detail && (
+        <p style={{ color: 'var(--text-dim)', fontSize: 14, lineHeight: 1.6, margin: '0 0 14px', whiteSpace: 'pre-line' }}>
+          {post.detail}
+        </p>
+      )}
+
+      {/* Photos */}
+      {post.photos?.length > 0 && (
+        <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
+          {post.photos.map((src, i) => (
+            <img key={i} src={src} alt="" style={{ width: 130, height: 96, objectFit: 'cover', borderRadius: 4, border: '1px solid var(--border)' }} />
           ))}
         </div>
+      )}
+
+      {/* Reactions + reply toggle */}
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', paddingTop: 12, borderTop: '1px solid var(--border)' }}>
+        {REACTIONS.map(({ key, emoji }) => {
+          const count   = post.reactions?.[key] || 0;
+          const active  = post.userReaction === key;
+          return (
+            <button key={key} onClick={() => onReact(post.id, key)} style={{
+              all: 'unset', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5,
+              padding: '5px 11px', borderRadius: 20,
+              background: active ? 'var(--accent-soft)' : 'transparent',
+              border: `1px solid ${active ? 'var(--accent-line)' : 'var(--border)'}`,
+              fontSize: 13, transition: 'all 0.15s',
+            }}>
+              <span>{emoji}</span>
+              <span className="mono-dim" style={{ fontSize: 11 }}>{count}</span>
+            </button>
+          );
+        })}
+        <button
+          onClick={() => setRepliesOpen((v) => !v)}
+          style={{ all: 'unset', cursor: 'pointer', marginLeft: 'auto', fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-faint)', letterSpacing: '0.06em' }}
+        >
+          {repliesOpen ? 'HIDE REPLIES' : `REPLIES (${post.comments?.length || 0})`}
+        </button>
       </div>
+
+      {/* Replies section */}
+      {repliesOpen && (
+        <div style={{ paddingTop: 14, marginTop: 12, borderTop: '1px solid var(--border)' }}>
+          {(post.comments || []).map((c) => (
+            <div key={c.id} style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
+              <div style={{ width: 28, height: 28, borderRadius: 4, background: 'var(--bg)', display: 'grid', placeItems: 'center', fontSize: 12, color: 'var(--accent-text)', fontFamily: 'var(--font-head)', fontWeight: 800, flexShrink: 0 }}>
+                {(c.author || 'U')[0].toUpperCase()}
+              </div>
+              <div>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', marginBottom: 2 }}>
+                  <span className="mono" style={{ fontSize: 12, fontWeight: 700 }}>{c.author}</span>
+                  <span className="mono-dim" style={{ fontSize: 10 }}>{c.recency}</span>
+                </div>
+                <p style={{ margin: 0, color: 'var(--text-dim)', fontSize: 13, lineHeight: 1.5 }}>{c.text}</p>
+              </div>
+            </div>
+          ))}
+          {replyError && (
+            <p style={{ color: '#f87171', fontSize: 12, fontFamily: 'var(--font-mono)', margin: '0 0 8px' }}>{replyError}</p>
+          )}
+          <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+            <input
+              value={replyText}
+              onChange={(e) => { setReplyText(e.target.value); setReplyError(''); }}
+              placeholder="Add a reply…"
+              style={{ flex: 1, fontSize: 13 }}
+              onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleReply(); } }}
+            />
+            <button className="btn ghost sm" onClick={handleReply} disabled={submitting || !replyText.trim()}>
+              {submitting ? '…' : 'POST'}
+            </button>
+          </div>
+        </div>
+      )}
+    </Panel>
+  );
+}
+
+function ComposePostModal({ profile, attempts, onClose, onSubmit, initialAttemptIdx }) {
+  const [selectedIdx, setSelectedIdx]   = useState(initialAttemptIdx ?? (attempts.length > 0 ? attempts.length - 1 : null));
+  const [exercises, setExercises]       = useState({ pushups: true, situps: true, run: true });
+  const [title, setTitle]               = useState('');
+  const [body, setBody]                 = useState('');
+  const [photos, setPhotos]             = useState([]);
+  const [feeling, setFeeling]           = useState('');
+
+  const attempt = selectedIdx !== null ? attempts[selectedIdx] : null;
+  const sc = attempt ? calculateIpptScore(attempt.pushups, attempt.situps, attempt.runSeconds) : null;
+
+  const toggleEx = (k) => setExercises((prev) => ({ ...prev, [k]: !prev[k] }));
+
+  const handleFiles = (e) => {
+    const files = Array.from(e.target.files).slice(0, 3 - photos.length);
+    Promise.all(files.map((f) => new Promise((res) => {
+      const reader = new FileReader();
+      reader.onload = (ev) => res(ev.target.result);
+      reader.readAsDataURL(f);
+    }))).then((urls) => setPhotos((prev) => [...prev, ...urls].slice(0, 3)));
+  };
+
+  const buildPost = () => {
+    const statLines = [];
+    const chips = [];
+    if (attempt) {
+      if (exercises.pushups) { statLines.push(`Push-ups: ${attempt.pushups} reps`); chips.push('Push-ups'); }
+      if (exercises.situps)  { statLines.push(`Sit-ups: ${attempt.situps} reps`);   chips.push('Sit-ups');  }
+      if (exercises.run)     { statLines.push(`2.4km: ${formatRunTime(attempt.runSeconds)}`); chips.push('2.4km'); }
+      if (sc) chips.push(sc.award);
+    }
+    if (feeling) chips.push(feeling);
+    const statsLine = statLines.join(' · ');
+    const feelingLine = feeling ? `Feeling: ${feeling}` : '';
+    const detail = [statsLine, feelingLine, body.trim()].filter(Boolean).join('\n\n');
+
+    return {
+      id: `user-${Date.now()}`,
+      name: profile.fullName,
+      unit: profile.unit || 'Unit',
+      recency: 'Just now',
+      title: title.trim(),
+      headline: title.trim() || 'Activity',
+      statline: sc ? `${sc.score} pts` : '',
+      detail,
+      chips,
+      photos,
+      reactions: { cheer: 0, fire: 0, respect: 0 },
+      userReaction: '',
+      comments: [],
+      isUserPost: true,
+    };
+  };
+
+  const canSubmit = title.trim() || body.trim();
+
+  return (
+    <Modal title="Post Activity" onClose={onClose}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+
+        {/* Attempt selector */}
+        {attempts.length > 0 ? (
+          <div>
+            <div className="label" style={{ fontSize: 10, marginBottom: 8 }}>SELECT ATTEMPT</div>
+            <select
+              value={selectedIdx ?? ''}
+              onChange={(e) => setSelectedIdx(Number(e.target.value))}
+              style={{ width: '100%' }}
+            >
+              {[...attempts].reverse().map((a, ri) => {
+                const idx = attempts.length - 1 - ri;
+                const s = calculateIpptScore(a.pushups, a.situps, a.runSeconds);
+                return (
+                  <option key={idx} value={idx}>
+                    {shortDate(a.date)} — {s.score} pts ({s.award})
+                  </option>
+                );
+              })}
+            </select>
+            {attempt && (
+              <div style={{ marginTop: 12 }}>
+                <div className="label" style={{ fontSize: 10, marginBottom: 8 }}>EXERCISES TO SHARE</div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  {[
+                    { key: 'pushups', label: `Push-ups · ${attempt.pushups}` },
+                    { key: 'situps',  label: `Sit-ups · ${attempt.situps}` },
+                    { key: 'run',     label: `2.4km · ${formatRunTime(attempt.runSeconds)}` },
+                  ].map(({ key, label }) => (
+                    <button key={key} type="button" onClick={() => toggleEx(key)} style={{
+                      padding: '6px 12px', borderRadius: 4, fontSize: 12, cursor: 'pointer',
+                      fontFamily: 'var(--font-mono)', letterSpacing: '0.04em',
+                      background: exercises[key] ? 'var(--accent-soft)' : 'transparent',
+                      border: `1px solid ${exercises[key] ? 'var(--accent-line)' : 'var(--border)'}`,
+                      color: exercises[key] ? 'var(--accent-text)' : 'var(--text-dim)',
+                      transition: 'all 0.15s',
+                    }}>{label}</button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          <p className="mono-dim" style={{ fontSize: 13, margin: 0 }}>No IPPT attempts logged yet. Log an attempt first to share your stats.</p>
+        )}
+
+        {/* Title */}
+        <div>
+          <div className="label" style={{ fontSize: 10, marginBottom: 6 }}>TITLE</div>
+          <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. New PB — Gold run" style={{ width: '100%' }} />
+        </div>
+
+        {/* Notes */}
+        <div>
+          <div className="label" style={{ fontSize: 10, marginBottom: 6 }}>NOTES</div>
+          <textarea
+            value={body}
+            onChange={(e) => setBody(e.target.value)}
+            placeholder="Share how the session went…"
+            rows={3}
+            style={{ width: '100%', resize: 'vertical', fontFamily: 'var(--font-mono)', fontSize: 13, background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 4, padding: '10px 12px', color: 'var(--text)', boxSizing: 'border-box' }}
+          />
+        </div>
+
+        {/* Feeling */}
+        <div>
+          <div className="label" style={{ fontSize: 10, marginBottom: 10 }}>I'M FEELING</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
+            {FEELINGS.map(({ emoji, label }) => {
+              const active = feeling === `${emoji} ${label}`;
+              return (
+                <button
+                  key={label}
+                  type="button"
+                  onClick={() => setFeeling(active ? '' : `${emoji} ${label}`)}
+                  style={{
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                    gap: 5, padding: '10px 6px', borderRadius: 6, cursor: 'pointer',
+                    background: active ? 'var(--accent-soft)' : 'var(--bg)',
+                    border: `1px solid ${active ? 'var(--accent-line)' : 'var(--border)'}`,
+                    transition: 'all 0.15s',
+                  }}
+                >
+                  <span style={{ fontSize: 20, lineHeight: 1 }}>{emoji}</span>
+                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: active ? 'var(--accent-text)' : 'var(--text-dim)', letterSpacing: '0.06em' }}>
+                    {label.toUpperCase()}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Photos */}
+        <div>
+          <div className="label" style={{ fontSize: 10, marginBottom: 8 }}>PHOTOS (up to 3)</div>
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 14px', border: '1px solid var(--border)', borderRadius: 4, fontSize: 12, fontFamily: 'var(--font-mono)', color: 'var(--text-dim)', cursor: photos.length < 3 ? 'pointer' : 'not-allowed', opacity: photos.length < 3 ? 1 : 0.4, letterSpacing: '0.05em' }}>
+            📷 UPLOAD
+            <input type="file" accept="image/*" multiple onChange={handleFiles} style={{ display: 'none' }} disabled={photos.length >= 3} />
+          </label>
+          {photos.length > 0 && (
+            <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+              {photos.map((src, i) => (
+                <div key={i} style={{ position: 'relative' }}>
+                  <img src={src} alt="" style={{ width: 88, height: 64, objectFit: 'cover', borderRadius: 4, border: '1px solid var(--border)' }} />
+                  <button type="button" onClick={() => setPhotos(photos.filter((_, pi) => pi !== i))}
+                    style={{ position: 'absolute', top: -6, right: -6, width: 18, height: 18, borderRadius: '50%', background: '#2a2a2a', border: '1px solid var(--border)', color: '#aaa', cursor: 'pointer', fontSize: 11, display: 'grid', placeItems: 'center', padding: 0 }}>
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <button className="primary-button" onClick={() => { if (canSubmit) onSubmit(buildPost()); }} style={{ opacity: canSubmit ? 1 : 0.45, cursor: canSubmit ? 'pointer' : 'not-allowed' }}>
+          POST ACTIVITY
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+function TrainingFeedScreen({ state, updateState }) {
+  const profile   = state.auth.profile;
+  const { user: authUser } = useAuth();
+  const supabaseId = authUser?.supabaseId || profile?.supabaseId;
+  const myPostIds  = useRef(new Set());
+  const location  = useLocation();
+  const [showCompose, setShowCompose] = useState(location.state?.autoCompose ?? false);
+  const [autoAttemptIdx] = useState(location.state?.attemptIdx ?? null);
+
+  const posts = state.social?.trainingFeedPosts ?? [];
+
+  const react = (postId, key) => {
+    updateState((c) => ({
+      ...c,
+      social: {
+        ...c.social,
+        trainingFeedPosts: c.social.trainingFeedPosts.map((p) => {
+          if (p.id !== postId) return p;
+          const was = p.userReaction === key;
+          const r   = { ...p.reactions };
+          if (p.userReaction) r[p.userReaction] = Math.max(0, (r[p.userReaction] || 0) - 1);
+          if (!was) r[key] = (r[key] || 0) + 1;
+          return { ...p, userReaction: was ? '' : key, reactions: r };
+        }),
+      },
+    }));
+  };
+
+  const addReply = (postId, text) => {
+    const post = (state.social?.trainingFeedPosts || []).find((p) => p.id === postId);
+    dbService.saveFeedComment(post?._dbId || postId, supabaseId, profile.fullName, text);
+    updateState((c) => ({
+      ...c,
+      social: {
+        ...c.social,
+        trainingFeedPosts: c.social.trainingFeedPosts.map((p) =>
+          p.id !== postId ? p : {
+            ...p,
+            comments: [...(p.comments || []), { id: Date.now(), author: profile.fullName, text, recency: 'Just now' }],
+          }
+        ),
+      },
+    }));
+  };
+
+  const publishPost = async (post) => {
+    const dbId = await dbService.saveFeedPost(supabaseId, post);
+    const postWithDbId = dbId ? { ...post, _dbId: dbId, userId: supabaseId } : post;
+    myPostIds.current.add(postWithDbId.id);
+    updateState((c) => ({
+      ...c,
+      social: { ...c.social, trainingFeedPosts: [postWithDbId, ...c.social.trainingFeedPosts] },
+    }));
+    setShowCompose(false);
+  };
+
+  const deletePost = (postId, dbId) => {
+    myPostIds.current.delete(postId);
+    dbService.deleteFeedPost(dbId);
+    updateState((c) => ({
+      ...c,
+      social: { ...c.social, trainingFeedPosts: c.social.trainingFeedPosts.filter((p) => p.id !== postId) },
+    }));
+  };
+
+  const isMyPost = (post) => myPostIds.current.has(post.id) || (supabaseId && post.userId === supabaseId);
+
+  return (
+    <div style={{ height: '100%', overflow: 'auto', padding: '28px 36px' }}>
+      <span className="label" style={{ color: 'var(--accent-text)', marginBottom: 8, display: 'block' }}>▲ SERVE · TRAINING FEED</span>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 24 }}>
+        <h1 className="h-display" style={{ fontSize: 52, margin: 0 }}>TRAINING FEED</h1>
+        <button className="btn" style={{ padding: '10px 20px' }} onClick={() => setShowCompose(true)}>
+          + POST ACTIVITY
+        </button>
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        {posts.length === 0 && (
+          <div className="mono-dim" style={{ textAlign: 'center', padding: '48px 0' }}>
+            No activity posted yet. Be the first.
+          </div>
+        )}
+        {posts.map((post) => (
+          <FeedPostCard
+            key={post.id}
+            post={post}
+            onReact={react}
+            onAddReply={addReply}
+            isOwn={isMyPost(post)}
+            onDelete={deletePost}
+          />
+        ))}
+      </div>
+
+      {showCompose && (
+        <ComposePostModal
+          profile={profile}
+          attempts={state.ippt.attempts}
+          initialAttemptIdx={autoAttemptIdx}
+          onClose={() => setShowCompose(false)}
+          onSubmit={publishPost}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─── WEEKEND PLANNER ─────────────────────────────────────────────────────────
+function WeekendPlannerScreen({ state, updateState, activeModule }) {
+  const profile = state.auth.profile;
+  const ipptAttempts = state.ippt.attempts;
+  const swimAttempts = state.swim?.attempts || [];
+
+  const lastIpptDate = ipptAttempts.length ? ipptAttempts[ipptAttempts.length - 1].date : 'none';
+  const lastSwimDate = swimAttempts.length ? swimAttempts[swimAttempts.length - 1].date : 'none';
+  const cacheKey = `${lastIpptDate}|${lastSwimDate}`;
+
+  const cachedPlan = state.workoutPlan?.cacheKey === cacheKey ? state.workoutPlan?.plan : null;
+  const [plan, setPlan] = useState(cachedPlan);
+  const [loading, setLoading] = useState(!cachedPlan);
+
+  useEffect(() => {
+    if (cachedPlan) return;
+
+    const recentAttempts = ipptAttempts.slice(-3).map((a) => {
+      const sc = calculateIpptScore(a.pushups, a.situps, a.runSeconds);
+      return { score: sc.score, pushups: a.pushups, situps: a.situps, runTime: formatRunTime(a.runSeconds) };
+    });
+    const latestIppt = recentAttempts[recentAttempts.length - 1];
+    const recentSwim = swimAttempts.slice(-3).map((a) => ({ time: formatRunTime(a.timeSeconds) }));
+
+    nlpService.getWeekendPlan({
+      pesStatus: profile.pesStatus,
+      vocation: profile.vocation || 'General',
+      ipptGoal: state.onboarding.ipptGoal || 'Pass',
+      currentScore: latestIppt?.score ?? null,
+      currentAward: latestIppt?.score ? calculateIpptScore(
+        ipptAttempts.slice(-1)[0].pushups,
+        ipptAttempts.slice(-1)[0].situps,
+        ipptAttempts.slice(-1)[0].runSeconds,
+      ).award : null,
+      attempts: recentAttempts,
+      swimAttempts: recentSwim,
+    }).then((data) => {
+      if (data) {
+        setPlan(data);
+        updateState((c) => ({ ...c, workoutPlan: { cacheKey, plan: data } }));
+      }
+      setLoading(false);
+    });
+  }, [cacheKey]);
+
+  const PlanSection = ({ title, planData, color }) => {
+    if (!planData) return null;
+    return (
+      <Panel ticks elevated style={{ padding: 26, marginBottom: 16 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
+          <div>
+            <div className="label" style={{ color, marginBottom: 6 }}>▲ THIS WEEKEND · AI PLAN</div>
+            <div className="h-title" style={{ fontSize: 20 }}>{title}</div>
+          </div>
+          <span className="info-badge">{(profile.vocation || 'General').toUpperCase()}</span>
+        </div>
+        <p style={{ color: 'var(--text-dim)', marginBottom: 20, lineHeight: 1.6 }}>{planData.summary}</p>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+          {planData.days.map((day) => (
+            <Panel key={day.id} style={{ padding: 20 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <span className="h-title" style={{ fontSize: 16 }}>{day.label}</span>
+                <span className="mono-dim">{day.duration}</span>
+              </div>
+              <p style={{ color: 'var(--text-dim)', fontSize: 13.5, lineHeight: 1.6, margin: 0 }}>{day.workout}</p>
+            </Panel>
+          ))}
+        </div>
+      </Panel>
+    );
+  };
+
+  return (
+    <section style={{ padding: '28px 36px' }}>
+      <span className="label" style={{ color: 'var(--accent-text)', marginBottom: 8, display: 'block' }}>▲ SERVE · WEEKEND PLANNER</span>
+      <h1 className="h-display" style={{ fontSize: 52, marginBottom: 6 }}>WEEKEND PLANNER</h1>
+      <p style={{ color: 'var(--text-dim)', marginBottom: 20, fontSize: 14 }}>
+        AI-curated weekend block covering IPPT and your 2km sea swim — personalised to your latest attempts.
+      </p>
+      <div className="badge-row" style={{ marginBottom: 20 }}>
+        <span className="info-badge">PES {profile.pesStatus}</span>
+        <span className="info-badge">{(profile.vocation || 'General').toUpperCase()}</span>
+        <span className="info-badge">{state.onboarding.ipptGoal}</span>
+        {loading && <span className="info-badge" style={{ color: 'var(--accent-text)' }}>◈ Generating…</span>}
+        {!loading && cachedPlan && <span className="info-badge" style={{ color: 'var(--success)' }}>◈ Saved plan</span>}
+      </div>
+
+      {loading && !plan && (
+        <div className="mono-dim" style={{ textAlign: 'center', padding: '60px 0' }}>Generating your personalised plan…</div>
+      )}
+
+      <PlanSection title="IPPT TRAINING PLAN" planData={plan?.ippt} color="var(--amber)" />
+      <PlanSection title="2KM SEA SWIM PLAN" planData={plan?.swim} color="var(--accent-text)" />
     </section>
   );
 }
@@ -1254,6 +2499,7 @@ function JournalScreen({ state, updateState }) {
   const [crisisState, setCrisisState] = useState(false);
   const [dismissedDip, setDismissedDip] = useState(false);
   const [trendInfo, setTrendInfo] = useState(null);
+  const [expandedReflectionId, setExpandedReflectionId] = useState(null);
 
   // AI trend narrative: recomputed whenever the recent scores change (e.g. a new
   // entry is submitted). Needs at least 3 entries — otherwise we show nothing.
@@ -1315,20 +2561,21 @@ function JournalScreen({ state, updateState }) {
       return;
     }
 
+    const newEntry = {
+      id: Date.now(),
+      timestamp: new Date().toISOString(),
+      text: entry.trim(),
+      sentiment: result,
+      prompt,
+    };
+
+    dbService.saveJournalEntry(state.auth.profile?.supabaseId, newEntry);
+
     updateState((current) => ({
       ...current,
       journal: {
         ...current.journal,
-        entries: [
-          ...current.journal.entries,
-          {
-            id: Date.now(),
-            timestamp: new Date().toISOString(),
-            text: entry.trim(),
-            sentiment: result,
-            prompt,
-          },
-        ],
+        entries: [...current.journal.entries, newEntry],
       },
     }));
 
@@ -1338,25 +2585,29 @@ function JournalScreen({ state, updateState }) {
 
   const scoreSeries = entries.map((item) => Math.round(entryScore(item) * 100));
   const latestScore = scoreSeries.length ? scoreSeries[scoreSeries.length - 1] : null;
-  const chartData = {
-    labels: entries.map((item) => shortDate(entryDay(item))),
-    datasets: [
-      {
-        data: scoreSeries,
-        borderColor: '#4A7C59',
-        backgroundColor: 'rgba(74, 124, 89, 0.12)',
-        tension: 0.35,
-        fill: true,
-        pointRadius: 3,
-        pointBackgroundColor: '#4A7C59',
-        pointBorderColor: '#fffdf8',
-        pointBorderWidth: 1.5,
-      },
-    ],
-  };
-
   const svgScores = entries.map((item) => ({ v: entryScore(item) }));
   const declining = dipState;
+  const sentinelEnabled = state.settings?.sentinelEnabled ?? state.onboarding.journalOptIn ?? true;
+
+  if (!sentinelEnabled) {
+    return (
+      <section>
+        <ScreenHeader
+          title="Sentinel"
+          subtitle="Private reflection with NLP used only to estimate your own emotional trend."
+        />
+        <div className="alert-card">
+          <h2>Sentinel is off</h2>
+          <p>
+            Your private journal and trend graph are disabled. You can turn Sentinel back on from your service record without restarting onboarding.
+          </p>
+          <button className="primary-button" onClick={() => navigate('/profile')}>
+            Open service record
+          </button>
+        </div>
+      </section>
+    );
+  }
 
   return (
     <div style={{ height: '100%', overflow: 'auto', padding: '28px 36px' }}>
@@ -1443,22 +2694,17 @@ function JournalScreen({ state, updateState }) {
             </div>
           ))}
         </Panel>
-        <Panel style={{ padding: 26 }}>
-          <span className="label" style={{ marginBottom: 6 }}>SUPPORT RESOURCES</span>
-          <div className="mono-dim" style={{ marginBottom: 18 }}>CONFIDENTIAL · ALWAYS AVAILABLE</div>
+        <Panel style={{ padding: 26, cursor: 'pointer' }} onClick={() => navigate('/escalation')}>
+          <span className="label" style={{ marginBottom: 6 }}>▲ SUPPORT RESOURCES</span>
+          <div className="mono-dim" style={{ marginBottom: 18 }}>CONFIDENTIAL · ALWAYS AVAILABLE · TAP TO OPEN →</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {[
-              ['SAF COUNSELLING CENTRE', 'Direct counsellor pathway', 'BOOK'],
-              ['SAF COUNSELLING CARELINE', '24-hour', '1800 278 0022'],
-              ['IMH MENTAL HEALTH HELPLINE', '24-hour', '6389 2222'],
-              ['SAMARITANS OF SINGAPORE', 'SOS · 24-hour', '1767'],
-            ].map(([t, sub, n]) => (
-              <div key={t} className="crisis-resource-row">
+            {crisisResources.resources.map((r) => (
+              <div key={r.name} className="crisis-resource-row">
                 <div>
-                  <div style={{ fontFamily: 'var(--font-head)', fontWeight: 700, fontSize: 14, letterSpacing: '0.02em' }}>{t}</div>
-                  <div className="mono-dim" style={{ fontSize: 10.5 }}>{sub}</div>
+                  <div style={{ fontFamily: 'var(--font-head)', fontWeight: 700, fontSize: 14, letterSpacing: '0.02em' }}>{r.name}</div>
+                  <div className="mono-dim" style={{ fontSize: 10.5 }}>{r.hours}</div>
                 </div>
-                <span className="mono" style={{ color: 'var(--amber)', fontSize: 15 }}>{n}</span>
+                <span className="mono" style={{ color: 'var(--amber)', fontSize: 15 }}>{r.number}</span>
               </div>
             ))}
           </div>
@@ -1472,16 +2718,35 @@ function JournalScreen({ state, updateState }) {
           <div className="empty-state">No reflections yet. Your first entry will appear here.</div>
         ) : allReflections.map((item, index) => {
           const score = entryScore(item);
+          const rowId = item.id ?? `${entryDay(item)}-${index}`;
+          const isExpanded = expandedReflectionId === rowId;
           return (
-            <Panel key={item.id ?? `${entryDay(item)}-${index}`} flush
+            <Panel key={rowId} flush
               className="past-entry-row"
-              style={{ borderLeftColor: score < 0.5 ? 'var(--danger)' : 'var(--accent)' }}
+              style={{ borderLeftColor: score < 0.5 ? 'var(--danger)' : 'var(--accent)', cursor: 'pointer', flexWrap: 'wrap', alignItems: 'flex-start', gap: 0 }}
+              onClick={() => setExpandedReflectionId(isExpanded ? null : rowId)}
             >
-              <span className="mono" style={{ color: 'var(--text-dim)', fontSize: 12, width: 52 }}>{shortDate(entryDay(item))}</span>
-              <span className="past-entry-score" style={{ color: score < 0.5 ? '#D98A55' : 'var(--amber)' }}>
-                {score.toFixed(2)}
-              </span>
-              <span style={{ flex: 1, color: 'var(--text-dim)', fontSize: 13.5 }}>{item.text}</span>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, width: '100%' }}>
+                <span className="mono" style={{ color: 'var(--text-dim)', fontSize: 12, width: 52, flexShrink: 0 }}>{shortDate(entryDay(item))}</span>
+                <span className="past-entry-score" style={{ color: score < 0.5 ? '#D98A55' : 'var(--amber)', flexShrink: 0 }}>
+                  {score.toFixed(2)}
+                </span>
+                <span style={{
+                  flex: 1, color: 'var(--text-dim)', fontSize: 13.5,
+                  overflow: 'hidden', display: '-webkit-box', WebkitBoxOrient: 'vertical',
+                  WebkitLineClamp: isExpanded ? 'unset' : 1,
+                }}>{item.text}</span>
+              </div>
+              {isExpanded && (
+                <div style={{ width: '100%', marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
+                  {item.prompt && (
+                    <div className="mono-dim" style={{ fontSize: 11, marginBottom: 10 }}>PROMPT · {item.prompt}</div>
+                  )}
+                  <div style={{ color: 'var(--text)', fontSize: 14, lineHeight: 1.8, fontStyle: 'italic' }}>
+                    "{expandReflection(item)}"
+                  </div>
+                </div>
+              )}
             </Panel>
           );
         })}
@@ -1504,7 +2769,12 @@ function JournalScreen({ state, updateState }) {
                 </div>
               ))}
             </div>
-            <button className="btn neutral full" onClick={() => setCrisisState(false)}>I'VE SEEN THIS → CLOSE</button>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 8 }}>
+              <button className="primary-button" onClick={() => { setCrisisState(false); navigate('/escalation?crisis=true'); }}>
+                See your support options →
+              </button>
+              <button className="btn neutral full" onClick={() => setCrisisState(false)}>I'VE SEEN THIS → CLOSE</button>
+            </div>
           </Panel>
         </div>
       )}
@@ -1513,13 +2783,16 @@ function JournalScreen({ state, updateState }) {
 }
 
 
-function EscalationScreen({ state }) {
+function EscalationScreen({ state, updateState }) {
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const isCrisis = params.get('crisis') === 'true';
   const [acknowledged, setAcknowledged] = useState(false);
   const [activePanel, setActivePanel] = useState(null);
   const [peerSent, setPeerSent] = useState(false);
+  const [pslDraft, setPslDraft] = useState('');
+  const [pslError, setPslError] = useState('');
+  const [pslSending, setPslSending] = useState(false);
 
   // AI companion chat (multi-turn within the session).
   const [history, setHistory] = useState([]);
@@ -1527,6 +2800,9 @@ function EscalationScreen({ state }) {
   const [thinking, setThinking] = useState(false);
 
   const entries = state.journal.entries.slice(-7);
+  const latestThread = [...(state.support?.pslThreads || [])].reverse().find((thread) =>
+    thread.status !== 'closed' && thread.requesterId === state.auth.profile?.memberId
+  );
   const chartData = {
     labels: entries.map((item) => shortDate(entryDay(item))),
     datasets: [
@@ -1556,6 +2832,68 @@ function EscalationScreen({ state }) {
     setHistory([...nextHistory, { role: 'assistant', content: reply }]);
   };
 
+  const openPslThread = () => {
+    const profile = state.auth.profile;
+    const createdAt = new Date().toISOString();
+    updateState((current) => ({
+      ...current,
+      support: {
+        ...current.support,
+        pslThreads: [
+          ...(current.support?.pslThreads || []),
+          {
+            id: `psl-${Date.now()}`,
+            alias: 'Anonymous NSF',
+            subject: 'Peer support request',
+            status: 'open',
+            createdAt,
+            assignedTo: peerSupportLead?.name || 'Amirul Hassan',
+            requesterId: profile?.memberId,
+            messages: [
+              {
+                from: 'anonymous',
+                text: 'I would like to speak to a peer support leader anonymously.',
+                timestamp: createdAt,
+              },
+            ],
+          },
+        ],
+      },
+    }));
+    setPeerSent(true);
+  };
+
+  const sendPslMessage = async () => {
+    if (!pslDraft.trim() || !latestThread) return;
+    const text = pslDraft.trim();
+    setPslSending(true);
+    setPslError('');
+    const verdict = await moderateSupportMessage(text);
+    setPslSending(false);
+    if (!verdict.approved) {
+      setPslError(verdict.reason || 'This anonymous chat is for support. Rephrase it with care before sending.');
+      return;
+    }
+    setPslDraft('');
+    updateState((current) => ({
+      ...current,
+      support: {
+        ...current.support,
+        pslThreads: (current.support?.pslThreads || []).map((thread) =>
+          thread.id === latestThread.id
+            ? {
+                ...thread,
+                messages: [
+                  ...thread.messages,
+                  { from: 'anonymous', text, timestamp: new Date().toISOString() },
+                ],
+              }
+            : thread,
+        ),
+      },
+    }));
+  };
+
   return (
     <section>
       <ScreenHeader
@@ -1564,7 +2902,8 @@ function EscalationScreen({ state }) {
       />
 
       <div className="chart-card sentinel-chart-card">
-        <div className="chart-caption">Your last 7 days — scored out of 100, only you can see this.</div>
+        <div className="label" style={{ color: 'var(--accent-text)', marginBottom: 6 }}>◈ SENTINEL · WELLNESS TREND</div>
+        <div className="chart-caption">Your private journal entries from the last 7 days, scored out of 100 by Sentinel. Only you can see this.</div>
         <div className="sentinel-chart-canvas">
           <Line options={chartOptions({ yLabel: true, yTicks: true, min: 0, max: 100 })} data={chartData} />
         </div>
@@ -1574,6 +2913,7 @@ function EscalationScreen({ state }) {
         <article className={`escalation-option ${activePanel === 'companion' ? 'active' : ''}`}>
           <h3>AI journalling companion</h3>
           <p>Talk it through with a warm, non-judgmental companion. Private to you.</p>
+          <p style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: -6, marginBottom: 4 }}>This is a supportive tool, not a substitute for professional therapy or clinical care.</p>
           <button className="soft-button" onClick={() => setActivePanel(activePanel === 'companion' ? null : 'companion')}>
             {activePanel === 'companion' ? 'Hide' : 'Open companion'}
           </button>
@@ -1618,19 +2958,49 @@ function EscalationScreen({ state }) {
 
         <article className="escalation-option">
           <h3>Peer support leader</h3>
-          <p>Send an anonymous request to a trained peer supporter in your unit. No names shared.</p>
-          <button className="soft-button" onClick={() => setPeerSent(true)}>
-            Request anonymously
+          <p>Open an anonymous chat with your unit's trained peer supporter. No names shared.</p>
+          <button className="soft-button" onClick={openPslThread} disabled={!!latestThread}>
+            {latestThread ? 'Thread open' : 'Request anonymously'}
           </button>
+          {latestThread && (
+            <div className="psl-chat-card user-view">
+              <div className="label" style={{ marginBottom: 8 }}>ANONYMOUS PSL THREAD</div>
+              <div className="psl-chat-log">
+                {latestThread.messages.map((message, index) => (
+                  <div key={`${message.timestamp}-${index}`} className={`psl-chat-message ${message.from}`}>
+                    <div className={`psl-chat-bubble ${message.from}`}>
+                      {message.text}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="psl-chat-compose">
+                <input
+                  value={pslDraft}
+                  onChange={(event) => setPslDraft(event.target.value)}
+                  placeholder="Add an anonymous message"
+                />
+                <button className="primary-button small" onClick={sendPslMessage} disabled={!pslDraft.trim() || pslSending}>
+                  {pslSending ? 'Checking…' : 'Send'}
+                </button>
+              </div>
+              {pslError && <p className="inline-warning">{pslError}</p>}
+            </div>
+          )}
         </article>
 
         <article className="escalation-option">
-          <h3>SAF counselling</h3>
-          <p>Speak with a SAF counsellor. Confidential and free.</p>
-          <div className="contact-card">
-            <strong>SAF Counselling Hotline</strong>
-            <a href="tel:1800-278-0022">1800-278-0022</a>
-          </div>
+          <h3>SAF counselling &amp; crisis lines</h3>
+          <p>Confidential and free. No commander is notified.</p>
+          {crisisResources.resources.map((r) => (
+            <div key={r.name} className="contact-card">
+              <div>
+                <strong>{r.name}</strong>
+                {r.hours && <div style={{ fontSize: 12, color: 'var(--text-dim)', marginTop: 2 }}>{r.hours}</div>}
+              </div>
+              <a href={`tel:${r.number}`}>{r.number}</a>
+            </div>
+          ))}
         </article>
 
         <article className="escalation-option">
@@ -1645,8 +3015,7 @@ function EscalationScreen({ state }) {
       {peerSent && (
         <Modal title="Request sent" onClose={() => setPeerSent(false)}>
           <p>
-            An anonymous request has been sent to your unit's peer support leader. Your identity is not attached —
-            they'll simply know someone reached out and is open to a chat.
+            An anonymous chat thread has been opened for your unit's peer support leader. Your identity is not attached.
           </p>
           <button className="primary-button" onClick={() => setPeerSent(false)}>
             Close
@@ -1678,14 +3047,180 @@ function EscalationScreen({ state }) {
   );
 }
 
-function ProfileScreen({ state, updateState }) {
+function SupportConsoleScreen({ state, updateState }) {
+  const profile = state.auth.profile;
+  const [replyDrafts, setReplyDrafts] = useState({});
+  const [replyErrors, setReplyErrors] = useState({});
+  const [replyChecking, setReplyChecking] = useState({});
+  const [selectedMessage, setSelectedMessage] = useState(null);
+  const threads = state.support?.pslThreads || [];
+  const isSupportUser = profile?.role === 'peer-support';
+
+  const sendReply = async (threadId) => {
+    const text = (replyDrafts[threadId] || '').trim();
+    if (!text) return;
+    setReplyChecking((current) => ({ ...current, [threadId]: true }));
+    setReplyErrors((current) => ({ ...current, [threadId]: '' }));
+    const verdict = await moderateSupportMessage(text);
+    setReplyChecking((current) => ({ ...current, [threadId]: false }));
+    if (!verdict.approved) {
+      setReplyErrors((current) => ({
+        ...current,
+        [threadId]: verdict.reason || 'PSL replies must stay kind, calm, and supportive. Rephrase before sending.',
+      }));
+      return;
+    }
+    updateState((current) => ({
+      ...current,
+      support: {
+        ...current.support,
+        pslThreads: (current.support?.pslThreads || []).map((thread) =>
+          thread.id === threadId
+            ? {
+                ...thread,
+                messages: [
+                  ...thread.messages,
+                  { from: 'psl', text, timestamp: new Date().toISOString() },
+                ],
+              }
+            : thread,
+        ),
+      },
+    }));
+    setReplyDrafts((current) => ({ ...current, [threadId]: '' }));
+  };
+
+  const unsendMessage = (threadId, messageIndex) => {
+    updateState((current) => ({
+      ...current,
+      support: {
+        ...current.support,
+        pslThreads: (current.support?.pslThreads || []).map((thread) =>
+          thread.id === threadId
+            ? {
+                ...thread,
+                messages: thread.messages.filter((_, index) => index !== messageIndex),
+              }
+            : thread,
+        ),
+      },
+    }));
+    setSelectedMessage(null);
+  };
+
+  const setThreadStatus = (threadId, status) => {
+    updateState((current) => ({
+      ...current,
+      support: {
+        ...current.support,
+        pslThreads: (current.support?.pslThreads || []).map((thread) =>
+          thread.id === threadId ? { ...thread, status } : thread,
+        ),
+      },
+    }));
+  };
+
+  if (!isSupportUser) {
+    return (
+      <section>
+        <ScreenHeader title="Support Console" subtitle="Peer support leader access only." />
+        <div className="empty-state">This console is available from the peer support leader account.</div>
+      </section>
+    );
+  }
+
+  return (
+    <section>
+      <ScreenHeader
+        title="PSL Console"
+        subtitle="Anonymous support threads only. Identities and personal training records stay hidden."
+      />
+
+      <div className="support-console-grid support-console-single">
+        <Panel ticks style={{ padding: 22 }}>
+          <span className="label" style={{ marginBottom: 14 }}>▲ ANONYMOUS PSL INBOX</span>
+          <div className="support-thread-list">
+            {threads.length === 0 ? (
+              <div className="empty-state">No anonymous support threads yet.</div>
+            ) : (
+              [...threads].reverse().map((thread) => (
+                <article key={thread.id} className="support-thread-card">
+                  <div className="support-thread-top">
+                    <div>
+                      <div className="h-title" style={{ fontSize: 17 }}>{thread.alias}</div>
+                      <div className="mono-dim">{thread.subject} · {shortDate(thread.createdAt)}</div>
+                    </div>
+                    <span className={`info-badge ${thread.status === 'open' ? 'distress-badge' : ''}`}>
+                      {thread.status.toUpperCase()}
+                    </span>
+                  </div>
+                  <div className="psl-chat-log">
+                    {thread.messages.map((message, index) => (
+                      <div
+                        key={`${thread.id}-${index}`}
+                        className={`psl-chat-message ${message.from} ${selectedMessage?.threadId === thread.id && selectedMessage?.index === index ? 'selected' : ''}`}
+                      >
+                        <button
+                          type="button"
+                          className={`psl-chat-bubble ${message.from}`}
+                          onClick={() => {
+                            if (message.from !== 'psl') return;
+                            setSelectedMessage((current) =>
+                              current?.threadId === thread.id && current?.index === index
+                                ? null
+                                : { threadId: thread.id, index },
+                            );
+                          }}
+                        >
+                          {message.text}
+                        </button>
+                        {message.from === 'psl' && selectedMessage?.threadId === thread.id && selectedMessage?.index === index && (
+                          <button className="psl-unsend-btn" type="button" onClick={() => unsendMessage(thread.id, index)}>
+                            Unsend
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  <div className="psl-chat-compose">
+                    <input
+                      value={replyDrafts[thread.id] || ''}
+                      onChange={(event) => setReplyDrafts((current) => ({ ...current, [thread.id]: event.target.value }))}
+                      placeholder="Reply as peer support leader"
+                    />
+                    <button className="primary-button small" onClick={() => sendReply(thread.id)} disabled={!replyDrafts[thread.id]?.trim() || replyChecking[thread.id]}>
+                      {replyChecking[thread.id] ? 'Checking…' : 'Reply'}
+                    </button>
+                    <button className="soft-button" onClick={() => setThreadStatus(thread.id, thread.status === 'open' ? 'monitoring' : 'open')}>
+                      {thread.status === 'open' ? 'Mark monitoring' : 'Reopen'}
+                    </button>
+                  </div>
+                  {replyErrors[thread.id] && <p className="inline-warning">{replyErrors[thread.id]}</p>}
+                </article>
+              ))
+            )}
+          </div>
+        </Panel>
+
+        <Panel style={{ padding: 22 }}>
+          <span className="label" style={{ marginBottom: 8 }}>▲ ACCESS CONTEXT</span>
+          <p style={{ color: 'var(--text-dim)', fontSize: 13.5, lineHeight: 1.55 }}>
+            Signed in as {profile.rank} {profile.fullName}. Anonymous chats do not reveal who reached out.
+          </p>
+        </Panel>
+      </div>
+    </section>
+  );
+}
+
+function ProfileScreen({ state, updateState, activeModule }) {
   const profile = state.auth.profile;
   const navigate = useNavigate();
   const ordDate = addYears(profile.enlistmentDate, 2);
   const ordDays = daysBetween(getToday(), ordDate);
 
   const [platoonFeed, setPlatoonFeed] = useState(true);
-  const [eveningReminder, setEveningReminder] = useState(true);
+  const [eveningReminder, setEveningReminder] = useState(state.settings?.eveningReminder ?? true);
 
   const branch = state.ui?.branch || 'army';
   const goalName = state.onboarding.ipptGoal || 'Pass';
@@ -1720,8 +3255,10 @@ function ProfileScreen({ state, updateState }) {
   }, [ipptAttempts, journalStreak, state.community?.buddyTaps]);
 
   const signOut = () => {
-    localStorage.removeItem(STORAGE_KEY);
-    updateState(() => defaultState);
+    updateState((current) => ({
+      ...current,
+      auth: { isAuthenticated: false, profile: null },
+    }));
     navigate('/login');
   };
 
@@ -1729,23 +3266,32 @@ function ProfileScreen({ state, updateState }) {
     updateState((c) => ({ ...c, onboarding: { ...c.onboarding, ipptGoal: key } }));
   const setBranch = (b) =>
     updateState((c) => ({ ...c, ui: { ...c.ui, branch: b } }));
-  const toggleConsent = () =>
-    updateState((c) => ({ ...c, onboarding: { ...c.onboarding, consented: !c.onboarding.consented } }));
+  const setModule = (module) => {
+    updateState((c) => ({ ...c, ui: { ...c.ui, activeModule: module } }));
+    navigate(`/${module}`);
+  };
+  const toggleSentinel = () =>
+    updateState((c) => ({ ...c, settings: { ...c.settings, sentinelEnabled: !(c.settings?.sentinelEnabled ?? true) } }));
+  const toggleEveningReminder = () => {
+    setEveningReminder((v) => !v);
+    updateState((c) => ({ ...c, settings: { ...c.settings, eveningReminder: !(c.settings?.eveningReminder ?? eveningReminder) } }));
+  };
 
   const GOAL_TIERS = [
-    { key: 'Pass',   label: 'PASS',   min: 61 },
-    { key: 'Silver', label: 'SILVER', min: 75 },
-    { key: 'Gold',   label: 'GOLD',   min: 85 },
+    { key: 'Pass', label: 'PASS', range: '51 - 60', award: '$0' },
+    { key: 'Pass with Incentive', label: 'PASS + INCENTIVE', range: '61 - 74', award: '$200' },
+    { key: 'Silver', label: 'SILVER', range: '75 - 84', award: '$300' },
+    { key: 'Gold', label: 'GOLD', range: '≥ 85', award: '$500' },
   ];
 
   const BRANCH_LIST = [
-    { key: 'army', label: 'LAND' },
-    { key: 'navy', label: 'SEA' },
-    { key: 'air',  label: 'AIR' },
-    { key: 'dis',  label: 'DIGITAL' },
+    { key: 'army', label: 'LAND', desc: 'Army' },
+    { key: 'navy', label: 'NAVY', desc: 'Navy' },
+    { key: 'air', label: 'AIR FORCE', desc: 'Air Force' },
+    { key: 'dis', label: 'DIGITAL', desc: 'Digital Service' },
   ];
 
-  const BRANCH_FORCE_LABEL = { army: 'LAND FORCE', navy: 'SEA FORCE', air: 'AIR FORCE', dis: 'DIGITAL FORCE' };
+  const BRANCH_FORCE_LABEL = { army: 'LAND', navy: 'NAVY', air: 'AIR FORCE', dis: 'DIGITAL' };
 
   return (
     <div style={{ height: '100%', overflow: 'auto', padding: '28px 36px' }}>
@@ -1786,8 +3332,8 @@ function ProfileScreen({ state, updateState }) {
 
           {/* Preferences panel */}
           <Panel style={{ padding: 28 }}>
-            <span className="label" style={{ marginBottom: 18, display: 'block' }}>IPPT OBJECTIVE</span>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8 }}>
+            <span className="label" style={{ marginBottom: 18, display: 'block' }}>▲ IPPT OBJECTIVE</span>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(124px,1fr))', gap: 8 }}>
               {GOAL_TIERS.map((t) => {
                 const active = goalName === t.key;
                 return (
@@ -1798,8 +3344,8 @@ function ProfileScreen({ state, updateState }) {
                       background: active ? 'var(--accent-soft)' : 'var(--bg)' }}>
                     <span style={{ fontFamily: 'var(--font-head)', fontWeight: 700, fontSize: 15,
                       color: active ? 'var(--text)' : 'var(--text-dim)' }}>{t.label}</span>
-                    <span className="mono" style={{ fontSize: 13, color: active ? 'var(--amber)' : 'var(--text-faint)' }}>
-                      {t.min} PTS
+                    <span className="mono" style={{ fontSize: 12, color: active ? 'var(--amber)' : 'var(--text-faint)', textAlign: 'center' }}>
+                      {t.range} PTS · {t.award}
                     </span>
                   </button>
                 );
@@ -1808,21 +3354,41 @@ function ProfileScreen({ state, updateState }) {
 
             <div style={{ height: 1, background: 'var(--border)', margin: '24px 0' }} />
 
-            <span className="label" style={{ marginBottom: 18, display: 'block' }}>SERVICE THEME</span>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 8 }}>
-              {BRANCH_LIST.map(({ key: k, label }) => {
-                const active = branch === k;
+            <span className="label" style={{ marginBottom: 12, display: 'block' }}>▲ JOURNEY MODE</span>
+            <div className="module-mode-slider" role="tablist" aria-label="Journey mode">
+              {[
+                { key: 'enlist', label: 'ENLIST', desc: 'Before BMT' },
+                { key: 'serve', label: 'SERVE', desc: 'Active service' },
+              ].map((item) => {
+                const active = activeModule === item.key;
                 return (
-                  <button key={k} onClick={() => setBranch(k)} data-branch={k}
-                    style={{ all: 'unset', cursor: 'pointer', display: 'flex', flexDirection: 'column',
-                      alignItems: 'center', gap: 8, padding: '16px 6px', borderRadius: 8,
-                      border: `1px solid ${active ? 'var(--accent-line)' : 'var(--border-strong)'}`,
-                      background: active ? 'var(--accent-soft)' : 'var(--bg)' }}>
-                    <span style={{ color: active ? 'var(--accent-text)' : 'var(--text-dim)' }}>
-                      <Insignia branch={k} size={24} />
+                  <button key={item.key} className={active ? 'active' : ''} onClick={() => setModule(item.key)} type="button">
+                    <span>{item.label}</span>
+                    <small>{item.desc}</small>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div style={{ height: 1, background: 'var(--border)', margin: '24px 0' }} />
+
+            <span className="label" style={{ marginBottom: 12, display: 'block' }}>▲ SERVICE THEME</span>
+            <div className="record-branch-grid">
+              {BRANCH_LIST.map((item) => {
+                const active = branch === item.key;
+                return (
+                  <button
+                    key={item.key}
+                    type="button"
+                    className={active ? 'active' : ''}
+                    onClick={() => setBranch(item.key)}
+                    data-branch={item.key}
+                  >
+                    <span className="record-branch-icon">
+                      <Insignia branch={item.key} size={24} />
                     </span>
-                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, whiteSpace: 'nowrap',
-                      color: active ? 'var(--text)' : 'var(--text-dim)' }}>{label}</span>
+                    <span className="record-branch-label">{item.label}</span>
+                    <small>{item.desc}</small>
                   </button>
                 );
               })}
@@ -1835,8 +3401,8 @@ function ProfileScreen({ state, updateState }) {
               <SettingRow
                 title="Sentinel journal"
                 desc="Nightly wellness tracking, visible only to you"
-                on={state.onboarding.consented}
-                onToggle={toggleConsent}
+                on={state.settings?.sentinelEnabled ?? true}
+                onToggle={toggleSentinel}
               />
               <SettingRow
                 title="Platoon feed visibility"
@@ -1848,7 +3414,7 @@ function ProfileScreen({ state, updateState }) {
                 title="Evening reminder"
                 desc="Quiet 2100h nudge to journal"
                 on={eveningReminder}
-                onToggle={() => setEveningReminder((v) => !v)}
+                onToggle={toggleEveningReminder}
               />
             </div>
           </Panel>
@@ -1857,8 +3423,8 @@ function ProfileScreen({ state, updateState }) {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             <Panel style={{ padding: 28 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
-                <span className="label">RECENT AWARDS</span>
-                <span className="mono-dim" style={{ fontSize: 11 }}>VIEW ALL →</span>
+                <span className="label">▲ RECENT AWARDS</span>
+                {achievements.length > 3 && <span className="mono-dim" style={{ fontSize: 11 }}>LATEST 3</span>}
               </div>
               {achievements.length > 0 ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -1880,7 +3446,7 @@ function ProfileScreen({ state, updateState }) {
             <Panel style={{ padding: 28 }}>
               <span className="label" style={{ marginBottom: 6, display: 'block' }}>ACCOUNT</span>
               <div className="mono-dim" style={{ marginBottom: 18, fontSize: 11 }}>
-                Signed in via SingPass · BUILD 2.4.0
+                SIGNED IN VIA SINGPASS
               </div>
               <button className="btn danger full" onClick={signOut}>SIGN OUT</button>
             </Panel>
@@ -2060,6 +3626,21 @@ function calculateIpptScore(pushups, situps, runSeconds) {
   return { score, award };
 }
 
+async function moderateSupportMessage(text) {
+  const verdict = await nlpService.moderate(text);
+  const lower = text.toLowerCase();
+  const hostileTerms = ['idiot', 'stupid', 'useless', 'pathetic', 'loser', 'shut up', 'dumb', 'weakling', 'hate you'];
+
+  if (hostileTerms.some((term) => lower.includes(term))) {
+    return {
+      approved: false,
+      reason: 'This chat is for peer support. Rephrase it with care before sending.',
+    };
+  }
+
+  return verdict;
+}
+
 function getPbs(attempts) {
   return attempts.reduce(
     (best, attempt) => ({
@@ -2212,6 +3793,43 @@ function getLongestStreak(entries) {
 }
 
 // Short, supportive read-back for a single past reflection (the "comment" in the list).
+function expandReflection(entry) {
+  const score = entryScore(entry);
+  const seed = ((entry.text || '') + (entry.timestamp || '')).split('').reduce((a, c) => a + c.charCodeAt(0), 0);
+  const pick = (arr) => arr[seed % arr.length];
+
+  if (score >= 0.75) return pick([
+    "Had a solid session this morning — everything landed the way it was supposed to, and I didn't have to fight myself to get through it. The afternoon was quieter, but in a good way. Felt more settled than I have in a while.",
+    "Training went well today. I was sharper, the reps felt cleaner, and I didn't clock out mentally before it was over. Whatever sleep I got last night helped and I carried it through the rest of the day.",
+    "One of those days where the routine actually carried me rather than just grinding me down. Did the work, kept pace, had a decent meal. Didn't need much more than that to feel okay.",
+    "Started slow but found my footing after the first hour. By the time we broke for the afternoon I felt more like myself — present, less in my own head. Good day overall.",
+  ]);
+  if (score >= 0.65) return pick([
+    "Nothing standout, but nothing went sideways either. The training was manageable, I got through admin without too much friction, and my head was in the right place for most of it.",
+    "Did what needed doing. Pace was reasonable, the pressure felt familiar rather than crushing. I've had worse weeks — finding a steadier rhythm makes a real difference.",
+    "A bit flat in the morning but things levelled out by mid-afternoon. Kept the routine going, stayed on top of things. Not a great day, but a functional one.",
+    "Not my best showing but a solid one. Got through training, kept my head, didn't let the small stuff pile up. That's the standard on most days and I hit it.",
+  ]);
+  if (score >= 0.50) return pick([
+    "Mixed day. Some parts worked, others didn't. I felt distracted during the session and couldn't quite lock in, but I finished what I started. Flat by the evening, but nothing alarming.",
+    "Woke up okay but it wore off by mid-morning. Finished the PT, got through the afternoon, but I was running on autopilot by the end. Nothing wrong — just a lot.",
+    "There's a kind of grey that comes with certain days in service. Not bad, not good — just grey. I did the work, I was present enough. That had to be enough today.",
+    "A bit heavy without a clear reason. Went through the motions, stayed level, made it to the end of the day. Couldn't pinpoint what was off, just something.",
+  ]);
+  if (score >= 0.35) return pick([
+    "Harder day. The kind where even the routine feels like a bigger lift than it should. Got through it, but I was quieter than usual and not really present by the end of it.",
+    "Slept poorly and it showed. Dragged myself through the morning, made it work, but the weight stuck around. Didn't talk about it much. Just kept moving.",
+    "Something about today sat heavy. Couldn't pinpoint it — just a general low that made everything feel more effortful. I functioned, but I was carrying something.",
+    "Off day. Nothing catastrophic, but I wasn't right. Kept it together in front of the others, got to the end of the day. It'll pass — it always does.",
+  ]);
+  return pick([
+    "Rough one. I was struggling before the day even started and it didn't get much lighter. Kept to myself, did the minimum, held it together. Writing this down feels like the only honest thing I could do today.",
+    "This one hit different. Couldn't shake the weight all day — not during training, not after. Got through it somehow. I don't really want to talk about it but I needed to write it somewhere.",
+    "Not okay today, and I knew it early. Pushed through what I had to, kept my face straight, but inside it was loud. There's only so long you can carry that before it shows.",
+    "Everything was harder than it should have been. The simplest things took effort and I was there in body but checked out everywhere else. Days like this remind you how much this place takes.",
+  ]);
+}
+
 function reflectionComment(entry) {
   const score = Math.round(entryScore(entry) * 100);
   const dominant = entry.sentiment?.dominant || dominantFromScore(entryScore(entry));
@@ -2223,6 +3841,19 @@ function reflectionComment(entry) {
   if (score >= 45) return 'A mixed, fairly neutral day. Nothing alarming in the language.';
   if (score >= 30) return 'The tone leaned low. If several days read like this, Sentinel will quietly offer you options.';
   return 'This reading was quite low. Be gentle with yourself — support is one tap away whenever you want it.';
+}
+
+function reflectionNarrative(entry) {
+  const score = Math.round(entryScore(entry) * 100);
+  const dominant = entry.sentiment?.dominant || dominantFromScore(entryScore(entry));
+  if (dominant === 'crisis') {
+    return 'This was a hard moment to put into words. Support resources were surfaced immediately — you didn\'t have to carry it alone. Looking back, reaching for help or even just naming it was the right move.';
+  }
+  if (score >= 75) return 'This was a good day — the kind worth holding onto. Whether it was a training milestone, a decent run, or just feeling more like yourself, the score reflects something that was genuinely working. Days like this anchor the harder ones.';
+  if (score >= 60) return 'A solid day overall. Not every day has to be remarkable to count — steady effort and a clear head are their own kind of win. The trend held up here, which matters more than any single session.';
+  if (score >= 45) return 'A mixed one. Some parts dragged, others were fine. That balance is more common than it looks from the outside — it doesn\'t signal anything alarming, just the ordinary texture of service life on a normal day.';
+  if (score >= 30) return 'This one sat a bit heavier. The weight of whatever was going on came through in how you wrote. It didn\'t break anything, but it registered — and that\'s worth acknowledging. Getting through a low day still counts.';
+  return 'A difficult day, honestly. The kind where even small things take real effort and the bigger picture feels distant. You put it into words anyway, which is harder than it sounds. That matters, even if it didn\'t feel like it at the time.';
 }
 
 function StreakCalendar({ entries, streakDays }) {

@@ -66,13 +66,11 @@ export const buddyTapNotification = {
 export function notify(type, payload = {}) {
   switch (type) {
     case "buddy_threshold": {
-      const name = payload.recipientName ? `${payload.recipientName} ` : "";
+      const name = payload.recipientName ? `${payload.recipientName} ` : "Your buddy ";
       return {
-        title: buddyTapNotification.title,
-        message: `${name}has been tapped by three people who care. An anonymous message of support has been sent directly to them.`,
-        body: buddyTapNotification.message,
-        resources: buddyTapNotification.resources,
-        footer: buddyTapNotification.footer,
+        title: "Support message sent",
+        message: `${name}has been tapped by three people. An anonymous message of support has been sent directly to them.`,
+        footer: "No one has been identified. No superior has been notified. This was triggered by people who care.",
       };
     }
     case "escalation_nudge": {

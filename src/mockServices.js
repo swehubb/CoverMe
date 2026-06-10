@@ -1,5 +1,5 @@
 const mockProfile = {
-  fullName: 'TAN WEI MING',
+  fullName: 'TAN AN WEI',
   nric: 'S1234567D',
   enlistmentDate: '2026-03-25',
   pesStatus: 'B1',

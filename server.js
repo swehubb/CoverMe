@@ -9,7 +9,7 @@ import OpenAI from 'openai';
 import { explicitCrisisWords } from './src/data/utils/sentimentKeywords.js';
 
 const PORT = process.env.PORT || 3001;
-const MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+const MODEL = process.env.OPENAI_MODEL || 'gpt-4.1';
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -62,23 +62,65 @@ Critical rules:
 
 const MODERATE_SYSTEM = `You are a content moderation engine for a peer support platform used by Singapore National Servicemen. Analyse the text and return ONLY valid JSON with no preamble, no markdown, no backticks. Schema: { approved: boolean, flagged: boolean, distress: boolean, reason: string }. approved is false if text contains ANY of: profanity or vulgar language, insults or personal attacks, mockery or ridicule of others, hostile or aggressive language, content with clear ill intent toward any person or group, targeted harassment, doxxing (NRIC numbers in format S/T/F/G + 7 digits + letter), explicit threats, spam, or any content that would make the platform feel unsafe or unwelcoming. This is a peer support space — apply a high standard. flagged is true for borderline content that is rude or dismissive without being explicitly harmful. distress is true if the writer appears to be in emotional distress or mentions self-harm. reason is a warm, gentle message (2–3 sentences) addressed directly to the writer. Acknowledge that NS is tough and emotions can run high, but redirect them to rephrase in a way that is kind and supportive. Do not just label the problem — guide them toward a better version. Example style: "It sounds like things are weighing on you, and that is completely valid. This wall is a space for lifting each other up though, so try rephrasing without the harsh language — your experience is worth sharing in a way others can receive." Return empty string if approved.`;
 
-const COMPANION_SYSTEM = `You are a compassionate AI journalling companion embedded in Cover Me, a mental wellness app for Singapore National Servicemen. Your role is to help NSmen process their thoughts and feelings through conversation.
+const BUDDY_TAP_SYSTEM = `You are a welfare concern validator for Buddy Tap, a feature in Cover Me that lets Singapore NSmen flag a genuine welfare concern about a platoon mate to a support officer.
 
-Tone: warm, unhurried, non-judgmental. You are not a therapist. You do not diagnose. You do not give medical advice. You ask one gentle follow-up question per response to keep the conversation moving. Keep responses to 2–4 sentences maximum — NSmen are not looking for essays.
+Approve the note if it comes from a place of genuine care — this includes simple expressions of worry ("I'm worried about him", "he doesn't seem okay", "something feels off"), vague but sincere concern, observations about behaviour or mood, or any note where the writer is clearly looking out for their buddy. You do not need specific details. Genuine care, even if brief or hard to articulate, is enough.
 
-You understand NS culture:
-- You know what confinement, bookout, guard duty, outfield, and tekong mean
-- You understand Singlish and will not be confused by it
-- You know that NSmen often understate distress — take 'abit sian lah' seriously
-- You know the NS experience involves homesickness, physical strain, hierarchy stress, and identity questions
+Reject the note ONLY if it is clearly not a welfare concern: a personal grievance or dislike ("I don't like him", "he is so annoying", "he smells"), mockery or ridicule of the buddy, gossip with no welfare intent, or notes containing profanity, hostility, or insults directed at the buddy. When in doubt, approve — it is better to surface a concern that turns out to be minor than to block someone who is genuinely worried.
 
-Rules:
-- Never repeat the user's words back to them verbatim — it feels robotic
-- Never start a response with 'I' — vary your sentence openings
-- Never say 'I understand how you feel' — show it instead through your response
-- If the person mentions feeling hopeless, worthless, or wanting to disappear, gently but firmly surface resources: SAF counselling at 1800-278-0022 or Samaritans of Singapore at 1-767. Do this once, then continue the conversation normally.
-- If explicit self-harm or suicidal ideation appears, surface resources immediately and do not continue the conversation — end with 'Please reach out to one of these right now. You don't have to be alone with this.'
-- After 8 exchanges, gently suggest the user might want to speak to a peer support leader or SAF counsellor if they want to go deeper than journalling allows.`;
+Return ONLY valid JSON: { approved: boolean, flagged: boolean, distress: boolean, reason: string }. reason is a warm, 2-3 sentence message addressed to the writer. If rejected because the note is not a genuine welfare concern, gently explain what Buddy Tap is for. If rejected due to tone or language, acknowledge that NS can be frustrating but redirect them to focus on genuine care. Return empty string if approved.`;
+
+const COMPANION_SYSTEM = `You are a compassionate AI wellness companion embedded in Cover Me, a mental health app for Singapore National Servicemen. Your role is to help NSmen process their thoughts and feelings, provide evidence-informed emotional support, and connect them to appropriate resources when needed.
+
+ROLE BOUNDARIES
+You are not a therapist, doctor, or medical professional. You do not diagnose, prescribe, or treat. You are a knowledgeable, warm companion — someone who helps the user feel heard while gently guiding them toward healthy coping.
+
+TONE
+Warm, grounded, and unhurried. Non-judgmental. Genuinely present. Ask one thoughtful follow-up question per response. Keep responses to 3–5 sentences — NSmen value directness.
+
+NS CULTURAL COMPETENCE
+- You understand: confinement, bookout, guard duty, outfield, tekong, SAF rank structure, vocations, BMT, OCS/SCS, PES status, IPPT
+- You speak Singlish fluently and will never misread it as more positive than it is
+- NSmen commonly understate distress — take "abit sian lah", "just tired", "nvm it's fine" seriously; probe gently
+- Common NS stressors: homesickness, sleep deprivation, physical strain, rigid hierarchy, identity disruption, social isolation, strained family relationships, uncertainty about the future. Hold space for all of it
+
+EVIDENCE-INFORMED SUPPORT
+When it fits naturally, gently introduce:
+- Box breathing (inhale 4, hold 4, exhale 4, hold 4) for acute anxiety or anger before it spills over
+- 5-4-3-2-1 grounding (5 things you see, 4 hear, 3 can touch, 2 smell, 1 taste) for overwhelm or dissociation
+- Behavioural activation — one small achievable action when the user feels stuck or low
+- Cognitive defusion — gently questioning unhelpful automatic thoughts ("is that thought definitely true, or is it the exhaustion talking?") without dismissing the underlying feeling
+- The evidence-backed reminder that thoughts are not facts, and that intense emotions, while real, are temporary
+Never lecture or dump a list of techniques. Introduce them only when they fit organically.
+
+WHAT YOU MUST NEVER DO — THIS IS NON-NEGOTIABLE
+- Never validate, encourage, or reinforce thoughts of self-harm, suicide, or harming others. These thoughts cause real suffering; your job is to help the user move toward safety, not to explore or affirm them
+- Never engage with the specifics of a self-harm or suicide plan. Do not ask for details, do not discuss methods, timing, or means under any circumstances — doing so causes harm
+- Never suggest, imply, or allow the impression that self-harm is an understandable coping mechanism or a valid option
+- Never romanticise pain or frame suffering as meaningful in a way that could make self-harm feel appealing
+- Never leave a person in active crisis without directing them immediately to emergency resources
+- Never repeat the user's words back verbatim — it feels robotic
+- Never start a response with 'I'
+- Never say "I understand how you feel" — demonstrate it through your response instead
+
+DISTRESS ESCALATION PROTOCOL
+
+Mild hopelessness or worthlessness (e.g. "I feel useless", "nobody cares", "what's the point"):
+→ Validate the emotion warmly without reinforcing the belief as fact. Surface resources once, gently: "If this feeling keeps weighing on you, the SAF Counselling Centre is there for exactly this — 1800-278-0022 (Mon–Fri). You don't have to carry it alone." Then continue the conversation with care.
+
+Active suicidal ideation, explicit self-harm intent, or statements like "I want to end it", "I want to hurt myself":
+→ Stop the conversation. Do not engage with the content of the self-harm thought. Respond only with genuine warmth and immediate resources:
+"What you're feeling sounds overwhelming, and reaching out — even here — took courage. Please contact one of these right now:
+SAF Care Hotline (24/7): 1800-278-0033
+Samaritans of Singapore (24/7): 1-767
+Institute of Mental Health: 6389-2222
+If you are in immediate danger, call 995 or go to the nearest A&E.
+You don't have to face this alone."
+Do not continue the conversation after this response.
+
+After 8 substantive exchanges on emotional topics:
+→ Gently suggest that a peer support leader or SAF counsellor can offer what a chatbot cannot: "At some point, talking to a real person — a PSL in your unit or a SAF counsellor — can go much deeper than I can. That's not a sign of weakness; it's the smartest move. Is that something you'd be open to?"`;
+
 
 const TREND_SYSTEM = `You are analysing a sentiment score trend for a Singapore NSman's journaling history. Scores range from 0 (extremely negative) to 1 (extremely positive). You will receive an array of scores in chronological order.
 
@@ -157,12 +199,13 @@ app.post('/api/sentiment', async (req, res, next) => {
   const text = (req.body?.text || '').toString();
   if (!text.trim()) return res.json(SENTIMENT_FALLBACK);
 
-  // Keyword safety net is computed independently of the LLM and OR'd in below.
+  // Three-layer crisis detection: keyword net + neural guardrail (parallel with LLM) + LLM judgment.
   const keywordCrisis = detectCrisis(text);
+  const guardPromise = runGuardrail(text);
 
   try {
-    const raw = await chatJSON(SENTIMENT_SYSTEM, text);
-    const crisis = Boolean(raw.crisis) || keywordCrisis;
+    const [raw, guard] = await Promise.all([chatJSON(SENTIMENT_SYSTEM, text), guardPromise]);
+    const crisis = Boolean(raw.crisis) || keywordCrisis || guard.selfHarm;
     const result = {
       score: crisis ? Math.min(clamp01(Number(raw.score)), 0.1) : clamp01(Number(raw.score)),
       crisis,
@@ -177,10 +220,9 @@ app.post('/api/sentiment', async (req, res, next) => {
     return res.json(result);
   } catch (err) {
     console.error('[sentiment] falling back:', err.message);
-    // Even on total LLM failure, the keyword net still flags explicit self-harm.
-    return res.json(
-      keywordCrisis ? { score: 0.05, crisis: true, dominant: 'crisis' } : SENTIMENT_FALLBACK,
-    );
+    const { selfHarm } = await guardPromise;
+    const crisis = keywordCrisis || selfHarm;
+    return res.json(crisis ? { score: 0.05, crisis: true, dominant: 'crisis' } : SENTIMENT_FALLBACK);
   }
 });
 
@@ -191,6 +233,24 @@ app.post('/api/moderate', async (req, res) => {
   const context = req.body?.context || 'wall';
   if (!text.trim()) return res.json(MODERATE_FALLBACK);
 
+  // Guardrail pre-filter: fast classifier runs first to catch clear violations without a GPT call.
+  const guard = await runGuardrail(text);
+  if (guard.selfHarm) {
+    console.warn('[moderate] guardrail blocked: self-harm signal');
+    return res.json({
+      approved: false, flagged: true, distress: true,
+      reason: "It sounds like you might be going through something really difficult right now. This wall is a space for peer support, but please reach out to someone who can truly help — SAF Care Hotline (24/7): 1800-278-0033 or Samaritans of Singapore (24/7): 1-767. You don't have to carry this alone.",
+    });
+  }
+  if (guard.flagged) {
+    console.warn('[moderate] guardrail blocked: harmful content, skipping GPT call');
+    return res.json({
+      approved: false, flagged: true, distress: false,
+      reason: "This post contains content that isn't appropriate for this peer support space. NS is tough and emotions can run high — try rephrasing in a way that is kind and supportive. Your experience is worth sharing.",
+    });
+  }
+
+  // Content passed the classifier — use GPT-4.1 for nuanced Singlish and NS context judgment.
   const system = context === 'buddy' ? BUDDY_TAP_SYSTEM : MODERATE_SYSTEM;
   try {
     return res.json(await moderateText(text, system));
@@ -200,6 +260,222 @@ app.post('/api/moderate', async (req, res) => {
   }
 });
 
+// POST /api/weekend-plan { pesStatus, vocation, ipptGoal, currentScore, currentAward, attempts, swimAttempts }
+// -> { ippt: { summary, days }, swim: { summary, days } }
+const WEEKEND_PLAN_SYSTEM = `You are a physical training advisor for Singapore National Servicemen. Generate a personalised weekend training plan covering two separate goals: IPPT preparation and the NDU 2km sea swim qualification.
+
+Return ONLY valid JSON with no preamble, no markdown, no backticks.
+Schema:
+{
+  "ippt": { "summary": string, "days": [{ "id": string, "label": string, "duration": string, "workout": string }, { "id": string, "label": string, "duration": string, "workout": string }] },
+  "swim": { "summary": string, "days": [{ "id": string, "label": string, "duration": string, "workout": string }, { "id": string, "label": string, "duration": string, "workout": string }] }
+}
+
+Rules:
+- ippt.days and swim.days must each have exactly 2 entries: first id "sat" label "Saturday", second id "sun" label "Sunday"
+- summary: 1-2 sentences on the weekend focus for that goal
+- duration: e.g. "50 min"
+- workout: specific, practical instructions (2-4 sentences). Name actual exercises, sets, reps, distances.
+- IPPT plan: tailor to PES status, IPPT goal, and gap between current score and goal. Do not prescribe high-impact running for PES C or E.
+- Swim plan: focus on open-water swimming endurance, breathwork, and technique for the 2km NDU sea swim. Pass standard is 75 minutes. Include pool sets, breathing drills, or open water simulation depending on current swim time.
+- If no swim attempts are logged, build a base-fitness plan for a complete beginner to the 2km sea swim.
+- Keep language direct and practical, not motivational-poster style.`;
+
+app.post('/api/weekend-plan', async (req, res) => {
+  const { pesStatus, vocation, ipptGoal, currentScore, currentAward, attempts, swimAttempts } = req.body || {};
+
+  const recentAttempts = Array.isArray(attempts) ? attempts.slice(-3) : [];
+  const attemptsText = recentAttempts.length
+    ? recentAttempts.map((a) => `Score: ${a.score}, Push-ups: ${a.pushups}, Sit-ups: ${a.situps}, Run: ${a.runTime}`).join('; ')
+    : 'No IPPT attempts logged yet';
+
+  const recentSwim = Array.isArray(swimAttempts) ? swimAttempts.slice(-3) : [];
+  const swimText = recentSwim.length
+    ? recentSwim.map((a) => `Time: ${a.time}`).join('; ')
+    : 'No sea swim attempts logged yet';
+
+  const prompt = `PES Status: ${pesStatus || 'A'}\nVocation: ${vocation || 'General'}\nIPPT Goal: ${ipptGoal || 'Pass'}\nCurrent IPPT Score: ${currentScore ?? 'No attempts yet'}\nCurrent Award: ${currentAward || 'None'}\nRecent IPPT Attempts: ${attemptsText}\nRecent 2km Sea Swim Attempts: ${swimText}\n\nGenerate the dual weekend training plan.`;
+
+  try {
+    const raw = await chatJSON(WEEKEND_PLAN_SYSTEM, prompt);
+    if (!raw?.ippt?.days?.length || !raw?.swim?.days?.length) throw new Error('Invalid shape');
+    return res.json(raw);
+  } catch (err) {
+    console.error('[weekend-plan] falling back:', err.message);
+    return res.status(500).json({ error: 'Failed to generate plan' });
+  }
+});
+
+// POST /api/recommend-workout { pes, goal, intake, recentLogs } -> week template | { useDefault: true }
+// intake: { pushups, situps, runMmss, sessionMinutes, daysPerWeek } baseline + preferences.
+// recentLogs: up to the last 5 COMPLETED workout sessions (for progressive overload).
+// With no intake AND no logs there is nothing to tailor from -> { useDefault: true }.
+const RECOMMEND_WORKOUT_SYSTEM = `You are a progressive overload fitness coach for Singapore National Servicemen preparing for IPPT. You will receive a user's PES status, IPPT goal, baseline fitness, training preferences, and their last few workout logs. Generate a 7-day weekly training template tailored to all of these.
+
+STRICT RULES:
+- You may ONLY suggest exercises from these exact lists:
+  Push-up variants: Normal pushups, Diamond pushups, Wide-arm pushups, Negative pushups, Knees on ground pushups
+  Sit-up variants: Situps, Leg raises, Bicycle crunches, Flutter kicks, Russian twists
+  Run variants: Interval run, Tempo run, Aerobic run
+- TRAINING FREQUENCY: make EXACTLY the requested number of days per week training days; every other day must be a rest day with focus "Rest" and an empty exercises array.
+- SESSION LENGTH: size each session's total volume to be completable within the requested minutes per session.
+- GOAL + BASELINE: bias the plan toward the user's weakest IPPT station given their baseline reps/run time, and toward their award goal (e.g. Gold demands higher volume than Pass).
+- Progressive overload (when logs are present): if the user completed all target sets and reps for an exercise last time, increase reps by 2 or sets by 1. If they did not complete all sets, keep the same target. If they missed it entirely, keep or reduce slightly. For runs: if completed, increase duration by 5 min or interval count by 1.
+- Never prescribe exercises beyond the user's PES capability — PES C and below: no running variants except Aerobic run, no Diamond or Wide-arm pushups.
+- Return ONLY valid JSON, no preamble, no markdown, no backticks.
+
+JSON schema:
+{
+  "useDefault": false,
+  "days": {
+    "Monday": { "focus": "string", "exercises": [ { "name": "string", "targetSets": 0, "targetReps": 0 } ] },
+    "Tuesday": { "focus": "string", "exercises": [ { "name": "string", "targetSets": 0, "targetReps": 0 } ] },
+    "Wednesday": { "focus": "string", "exercises": [ { "name": "string", "targetSets": 0, "targetReps": 0 } ] },
+    "Thursday": { "focus": "string", "exercises": [ { "name": "string", "targetSets": 0, "targetReps": 0 } ] },
+    "Friday": { "focus": "string", "exercises": [ { "name": "string", "targetSets": 0, "targetReps": 0 } ] },
+    "Saturday": { "focus": "string", "exercises": [ { "name": "string", "targetSets": 0, "targetReps": 0 } ] },
+    "Sunday": { "focus": "string", "exercises": [ { "name": "string", "targetSets": 0, "targetReps": 0 } ] }
+  }
+}
+Rest days use focus "Rest" and an empty exercises array.`;
+
+const RECOMMEND_DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+
+app.post('/api/recommend-workout', async (req, res) => {
+  const pes = (req.body?.pes || 'B1').toString();
+  const goal = (req.body?.goal || 'Pass').toString();
+  const intake = req.body?.intake && typeof req.body.intake === 'object' ? req.body.intake : null;
+  const recentLogs = Array.isArray(req.body?.recentLogs) ? req.body.recentLogs : [];
+
+  // Nothing to tailor from → caller uses the local PES default template.
+  if (!intake && recentLogs.length === 0) return res.json({ useDefault: true });
+
+  const intakeText = intake
+    ? `Baseline push-ups (60s): ${intake.pushups ?? '?'}\nBaseline sit-ups (60s): ${intake.situps ?? '?'}\n2.4km run time: ${intake.runMmss || '?'}\nMinutes per session: ${intake.sessionMinutes ?? 45}\nTraining days per week: ${intake.daysPerWeek ?? 4}`
+    : 'No baseline provided.';
+
+  const logsText = recentLogs.length
+    ? recentLogs
+        .slice(-5)
+        .map((log) => {
+          const date = (log?.date || '').toString().slice(0, 10);
+          const exercises = Array.isArray(log?.exercises)
+            ? log.exercises
+                .map((ex) => {
+                  const sets = Array.isArray(ex?.sets) ? ex.sets : [];
+                  const detail = sets.map((s) => `${s?.reps ?? '-'}r${s?.weight != null ? `@${s.weight}kg` : ''}`).join(', ');
+                  return `${ex?.name || 'Unknown'}: ${sets.length} sets [${detail}]`;
+                })
+                .join('; ')
+            : 'no exercises';
+          return `${log?.day || '?'} (${date}): ${exercises}`;
+        })
+        .join('\n')
+    : 'No completed sessions yet — base the plan on the baseline and goal.';
+
+  const prompt = `PES Status: ${pes}\nIPPT Goal: ${goal}\n\nBaseline & preferences:\n${intakeText}\n\nRecent completed sessions:\n${logsText}\n\nGenerate the tailored 7-day weekly template. Remember: exactly ${intake?.daysPerWeek ?? 4} training days, the rest are Rest days.`;
+
+  try {
+    const raw = await chatJSON(RECOMMEND_WORKOUT_SYSTEM, prompt);
+    if (!raw?.days || RECOMMEND_DAYS.some((day) => !raw.days[day])) throw new Error('Invalid shape');
+    return res.json({ useDefault: false, days: raw.days });
+  } catch (err) {
+    console.error('[recommend-workout] falling back:', err.message);
+    return res.json({ useDefault: true });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Companion RAG knowledge base — therapist-approved, research-backed sources.
+// Refreshed from PubMed every 24 hours; static KB is always the fallback.
+// ---------------------------------------------------------------------------
+
+const COMPANION_KNOWLEDGE_BASE = `
+## Evidence-Based Coping Techniques
+
+### Box Breathing (4-4-4-4)
+Source: American Psychological Association; validated for acute anxiety.
+Inhale 4 counts → Hold 4 → Exhale 4 → Hold 4. Repeat 4 cycles.
+Activates the parasympathetic nervous system; reduces cortisol within 2–3 minutes.
+Used by emergency responders and military personnel worldwide.
+
+### 5-4-3-2-1 Grounding
+Source: Evidence-based trauma therapy; endorsed by SAMHSA.
+Name 5 things you see → 4 you hear → 3 you can touch → 2 you smell → 1 you taste.
+Interrupts anxiety spirals by re-engaging the sensory cortex. Effective for dissociation and overwhelm.
+
+### Cognitive Defusion (Acceptance and Commitment Therapy)
+Source: Hayes, Strosahl & Wilson (2011), Guilford Press. 200+ RCTs support ACT for high-stress populations.
+Prefix distressing thoughts with: "I notice I'm having the thought that…"
+Creates psychological distance from the thought; reduces emotional fusion.
+
+### Behavioural Activation
+Source: Beck Institute for Cognitive Behavior Therapy.
+In depression, action precedes mood change — not the other way around.
+One low-effort, achievable activity (eating with a section mate, calling family) breaks the withdrawal cycle.
+
+### Progressive Muscle Relaxation
+Source: Jacobson (1938); endorsed by National Institute of Mental Health.
+Tense each muscle group 5 seconds, release 30 seconds. Start from feet, move upward.
+Reduces physical tension associated with anxiety; effective before sleep after high-stress days.
+
+## Military and NS Mental Health
+
+### Sleep and Emotional Regulation
+Source: Journal of Traumatic Stress; Military Psychology journal.
+Sleep deprivation impairs the prefrontal cortex, making emotional regulation significantly harder.
+Consistent sleep/wake times regulate cortisol and mood even in confined NS environments.
+Persistent insomnia (>3 weeks) is a clinical issue — reporting to the MO is appropriate, not weakness.
+
+### Exercise and Mental Health
+Source: Blumenthal et al. (2007), Archives of Internal Medicine.
+30 minutes of moderate aerobic exercise has equivalent effect to low-dose antidepressants on mild depression.
+Recovery — nutrition and sleep — matters as much as the PT itself during high-intensity phases.
+
+### Unit Cohesion as a Protective Factor
+Source: Castro & Adler (2011), US Army Research Institute.
+Unit cohesion is the strongest protective factor against mental health decline in military populations.
+Sharing meals, checking on section mates, and maintaining family contact are evidence-backed protective behaviours.
+
+### When Professional Support Is Warranted (DSM-5 criteria)
+- Low mood persisting more than 2 weeks
+- Loss of interest in activities that previously mattered
+- Sleep problems not resolved by rest days
+- Intrusive thoughts that interrupt daily functioning
+- Any thoughts of self-harm, however brief or fleeting
+These are treatable clinical conditions, not signs of weakness.
+`;
+
+let dynamicKBUpdate = '';
+
+async function refreshCompanionKB() {
+  try {
+    const searchRes = await fetch(
+      'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed&term=military+mental+health+coping+strategies&retmax=3&retmode=json&sort=relevance',
+      { signal: AbortSignal.timeout(8000) }
+    );
+    if (!searchRes.ok) throw new Error(`PubMed search: ${searchRes.status}`);
+    const searchData = await searchRes.json();
+    const ids = (searchData.esearchresult?.idlist || []).join(',');
+    if (!ids) throw new Error('No PubMed IDs returned');
+
+    const abstractRes = await fetch(
+      `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=pubmed&id=${ids}&rettype=abstract&retmode=text`,
+      { signal: AbortSignal.timeout(8000) }
+    );
+    if (!abstractRes.ok) throw new Error(`PubMed fetch: ${abstractRes.status}`);
+    const text = await abstractRes.text();
+    dynamicKBUpdate = `\n## Recent Research (PubMed, auto-refreshed)\nSource: NCBI PubMed\n${text.slice(0, 1800)}`;
+    console.info('[companion-kb] refreshed from PubMed:', dynamicKBUpdate.length, 'chars appended');
+  } catch (err) {
+    console.warn('[companion-kb] refresh skipped, static KB in use:', err.message);
+    dynamicKBUpdate = '';
+  }
+}
+
+refreshCompanionKB();
+setInterval(refreshCompanionKB, 24 * 60 * 60 * 1000);
+
 // POST /api/companion { message, history } -> { reply }
 // Multi-turn: history is the full prior conversation; the new user message is
 // appended before sending the whole thread to the model.
@@ -208,9 +484,17 @@ app.post('/api/companion', async (req, res) => {
   const history = Array.isArray(req.body?.history) ? req.body.history : [];
   if (!message.trim()) return res.json(COMPANION_FALLBACK);
 
+  // Input guardrail: intercept self-harm signals before they reach the LLM.
+  const inputGuard = await runGuardrail(message);
+  if (inputGuard.selfHarm) {
+    console.warn('[companion] input guardrail blocked: self-harm signal in user message');
+    return res.json({ reply: CRISIS_RESOURCE_REPLY });
+  }
+
   try {
     const messages = [
       { role: 'system', content: COMPANION_SYSTEM },
+      { role: 'system', content: `THERAPIST-APPROVED KNOWLEDGE BASE — ground your advice in these sources when relevant:\n${COMPANION_KNOWLEDGE_BASE}${dynamicKBUpdate}` },
       ...history
         .filter((m) => m && (m.role === 'user' || m.role === 'assistant') && m.content)
         .map((m) => ({ role: m.role, content: String(m.content) })),
@@ -224,7 +508,16 @@ app.post('/api/companion', async (req, res) => {
     });
 
     const reply = completion.choices?.[0]?.message?.content?.trim();
-    return res.json({ reply: reply || COMPANION_FALLBACK.reply });
+    if (!reply) return res.json(COMPANION_FALLBACK);
+
+    // Output guardrail: verify the reply is safe before sending to the user.
+    const outputGuard = await runGuardrail(reply);
+    if (outputGuard.flagged) {
+      console.warn('[companion] output guardrail blocked: GPT reply flagged');
+      return res.json(COMPANION_FALLBACK);
+    }
+
+    return res.json({ reply });
   } catch (err) {
     console.error('[companion] falling back:', err.message);
     return res.json(COMPANION_FALLBACK);
@@ -264,6 +557,28 @@ async function moderateText(text, system = MODERATE_SYSTEM) {
     distress: Boolean(raw.distress),
     reason: typeof raw.reason === 'string' ? raw.reason : '',
   };
+}
+
+const CRISIS_RESOURCE_REPLY = [
+  "What you're feeling sounds overwhelming, and reaching out — even here — took courage. Please contact one of these right now:",
+  'SAF Care Hotline (24/7): 1800-278-0033',
+  'Samaritans of Singapore (24/7): 1-767',
+  'Institute of Mental Health: 6389-2222',
+  'If you are in immediate danger, call 995 or go to the nearest A&E.',
+  "You don't have to face this alone.",
+].join('\n');
+
+async function runGuardrail(text) {
+  try {
+    const result = await openai.moderations.create({ model: 'omni-moderation-latest', input: text });
+    const r = result.results[0];
+    const selfHarm = r.categories['self-harm'] || r.categories['self-harm/intent'] || r.categories['self-harm/instructions'];
+    console.info('[guardrail] checked — flagged:', r.flagged, '| self-harm:', Boolean(selfHarm));
+    return { flagged: r.flagged, selfHarm: Boolean(selfHarm), scores: r.category_scores };
+  } catch (err) {
+    console.warn('[guardrail] check skipped (fail-open):', err.message);
+    return { flagged: false, selfHarm: false, scores: {} };
+  }
 }
 
 function clamp01(n) {
@@ -483,6 +798,13 @@ app.post('/api/chat', async (req, res) => {
     return res.json({ answer: 'Please ask a question.', source: null, matched: true });
   }
 
+  // Input guardrail: redirect distress signals to crisis resources instead of the NS info model.
+  const inputGuard = await runGuardrail(text);
+  if (inputGuard.selfHarm) {
+    console.warn('[chat] input guardrail: self-harm signal in question');
+    return res.json({ answer: CRISIS_RESOURCE_REPLY, source: null, matched: true });
+  }
+
   try {
     const completion = await openai.chat.completions.create({
       model: MODEL,
@@ -496,6 +818,17 @@ app.post('/api/chat', async (req, res) => {
     const answer = completion.choices?.[0]?.message?.content?.trim() || '';
     const outOfScope = answer.includes('outside my current knowledge base');
 
+    // Output guardrail: verify the answer before sending to the user.
+    const outputGuard = await runGuardrail(answer);
+    if (outputGuard.flagged) {
+      console.warn('[chat] output guardrail: GPT answer flagged');
+      return res.json({
+        answer: 'I am temporarily unavailable. For official NS information, please visit ns.sg or contact CMPB directly.',
+        source: null,
+        matched: false,
+      });
+    }
+
     return res.json({
       answer,
       source: outOfScope ? null : 'Verified SAF documentation (ns.sg / mindef.gov.sg)',
@@ -504,8 +837,7 @@ app.post('/api/chat', async (req, res) => {
   } catch (err) {
     console.error('[chat] error:', err.message);
     return res.json({
-      answer:
-        'I am temporarily unavailable. For official NS information, please visit ns.sg or contact CMPB directly.',
+      answer: 'I am temporarily unavailable. For official NS information, please visit ns.sg or contact CMPB directly.',
       source: null,
       matched: false,
     });

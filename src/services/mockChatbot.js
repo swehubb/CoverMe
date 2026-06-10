@@ -24,7 +24,7 @@ const qaDatabase = [
   {
     keywords: ["ippt", "fitness test", "pass ippt", "scoring"],
     question: "How does IPPT scoring work?",
-    answer: "IPPT consists of three components: push-ups (1 minute), sit-ups (1 minute), and a 2.4km run. Each component is scored out of 25 points (run out of 50), for a maximum of 100. Pass requires 51 points, Silver (Pass with Incentive) requires 75, and Gold requires 85. Your scores determine monetary incentives and whether you need additional NS FIT sessions.",
+    answer: "IPPT consists of three components: push-ups (1 minute), sit-ups (1 minute), and a 2.4km run. Each component is scored out of 25 points (run out of 50), for a maximum of 100. Pass is 51-60 points, Pass with Incentive is 61-74, Silver is 75-84, and Gold is 85 or higher. The incentive bands are $0, $200, $300, and $500 respectively.",
   },
   {
     keywords: ["pes", "physical employment status", "pes status"],

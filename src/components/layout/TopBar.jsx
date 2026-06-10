@@ -2,8 +2,6 @@ import { useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import Insignia from '../shared/Insignia';
 
-const BRANCHES = ['army', 'navy', 'air', 'dis'];
-
 const ROUTE_TITLES = {
   '/login':          'AUTHENTICATION',
   '/setup/goal':     'ONBOARD / IPPT OBJECTIVE',
@@ -14,6 +12,7 @@ const ROUTE_TITLES = {
   '/journal':        'SERVE / SENTINEL',
   '/buddy-tap':      'SERVE / SQUAD SUPPORT',
   '/peer-support':   'SERVE / PEER WALL',
+  '/support-console':'SERVE / SUPPORT CONSOLE',
   '/escalation':     'SERVE / ESCALATION',
   '/profile':        'SERVE / SERVICE RECORD',
   '/what-to-expect': 'ENLIST / BRIEF',
@@ -31,7 +30,6 @@ function LiveReadout() {
   }, []);
   return (
     <div className="live-readout">
-      <span>01°22'14"N 103°49'07"E</span>
       <span>
         {time.toLocaleTimeString('en-GB', { hour12: false })}
         <span className="blink"> ●</span> LIVE
@@ -40,7 +38,7 @@ function LiveReadout() {
   );
 }
 
-export default function TopBar({ branch, onBranchChange, profile }) {
+export default function TopBar({ branch, activeModule, onModuleChange, profile }) {
   const { pathname } = useLocation();
   const title = ROUTE_TITLES[pathname] || 'SERVE';
 
@@ -50,28 +48,30 @@ export default function TopBar({ branch, onBranchChange, profile }) {
         <span className="top-bar-bullet">▲</span>
         <span className="top-bar-title">{title}</span>
         <span className="badge verified" style={{ fontSize: 10 }}>
-          {branch === 'army' ? 'LAND FORCE' :
-           branch === 'navy' ? 'SEA FORCE'  :
-           branch === 'air'  ? 'AIR FORCE'  : 'DIGITAL FORCE'}
+          {branch === 'army' ? 'LAND' :
+           branch === 'navy' ? 'NAVY' :
+           branch === 'air'  ? 'AIR FORCE' : 'DIGITAL'}
         </span>
       </div>
       <div className="top-bar-right">
-        <LiveReadout />
-        {onBranchChange && (
-          <div className="branch-switcher">
-            {BRANCHES.map((b) => (
+        {onModuleChange && (
+          <div className="top-module-switch" role="tablist" aria-label="Journey mode">
+            {[
+              ['enlist', 'Enlist'],
+              ['serve', 'Serve'],
+            ].map(([key, label]) => (
               <button
-                key={b}
-                className={`branch-btn${branch === b ? ' active' : ''}`}
-                onClick={() => onBranchChange(b)}
-                title={b.toUpperCase()}
-                data-branch={b}
+                key={key}
+                type="button"
+                className={activeModule === key ? 'active' : ''}
+                onClick={() => onModuleChange(key)}
               >
-                <Insignia branch={b} size={18} />
+                {label}
               </button>
             ))}
           </div>
         )}
+        <LiveReadout />
         {profile && (
           <div className="topbar-profile">
             <div className="topbar-avatar">
