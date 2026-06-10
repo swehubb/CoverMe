@@ -8,13 +8,13 @@ import {
   formatExerciseDetail,
   isRestTemplateDay,
   isRunExercise,
+  restrictTemplateToDays,
   sanitisePlanExercises,
   weekdayOf,
 } from '../data/workoutLibrary';
 
 const STREAK_WEEKS = 12;
 const QUEUE_HORIZON_DAYS = 28; // how far ahead to project the dated queue
-const QUEUE_VISIBLE = 6; // how many upcoming sessions to show
 
 // ---- local date helpers -----------------------------------------------------
 function localKey(date) {
@@ -69,6 +69,25 @@ function normaliseDays(rawDays) {
   return days;
 }
 
+// Collapsible section header. The label + chevron is the toggle; any children
+// render as a right-aligned tools cluster (and don't trigger the collapse).
+function SectionHead({ id, label, collapsed, onToggle, children }) {
+  return (
+    <div className="wk-section-head">
+      <button
+        type="button"
+        className="wk-section-toggle"
+        onClick={() => onToggle(id)}
+        aria-expanded={!collapsed}
+      >
+        <span className={`wk-section-chevron${collapsed ? ' collapsed' : ''}`}>▾</span>
+        <span className="label">{label}</span>
+      </button>
+      {children && <div className="wk-section-tools">{children}</div>}
+    </div>
+  );
+}
+
 export default function PreEnlistmentWorkout({ state, updateState }) {
   const navigate = useNavigate();
   const pes = state.auth.profile?.pesStatus || 'B1';
@@ -82,6 +101,8 @@ export default function PreEnlistmentWorkout({ state, updateState }) {
   const [editingIntake, setEditingIntake] = useState(false);
   const [expandedKey, setExpandedKey] = useState(null);
   const [expandedLog, setExpandedLog] = useState(null);
+  const [collapsed, setCollapsed] = useState({});
+  const toggleSection = (id) => setCollapsed((c) => ({ ...c, [id]: !c[id] }));
 
   const completedLogs = useMemo(() => logs.filter(isCompletedLog), [logs]);
   const lastCompletedDate = completedLogs.length ? completedLogs[completedLogs.length - 1].date : null;
@@ -108,8 +129,9 @@ export default function PreEnlistmentWorkout({ state, updateState }) {
       .then((res) => {
         if (!active) return;
         setGenerating(false);
-        if (!res || res.useDefault) setPlan(buildDefaultPlan(pes));
-        else setPlan({ generatedAt: new Date().toISOString(), weekTemplate: normaliseDays(res.days) });
+        const days = res && !res.useDefault ? normaliseDays(res.days) : buildDefaultPlan(pes).weekTemplate;
+        // Hard-cap to the volume the user asked for, Monday-first.
+        setPlan({ generatedAt: new Date().toISOString(), weekTemplate: restrictTemplateToDays(days, intake.daysPerWeek) });
       });
     return () => {
       active = false;
@@ -129,8 +151,9 @@ export default function PreEnlistmentWorkout({ state, updateState }) {
   // and any date already completed.
   const queue = useMemo(() => {
     if (!plan?.weekTemplate) return [];
+    const visible = Math.max(1, intake.daysPerWeek || 1); // only show as many as they train per week
     const out = [];
-    for (let i = 0; i < QUEUE_HORIZON_DAYS && out.length < QUEUE_VISIBLE; i += 1) {
+    for (let i = 0; i < QUEUE_HORIZON_DAYS && out.length < visible; i += 1) {
       const date = addDays(today, i);
       const key = localKey(date);
       if (completedDates.has(key)) continue;
@@ -140,7 +163,7 @@ export default function PreEnlistmentWorkout({ state, updateState }) {
     }
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [plan?.generatedAt, plan?.weekTemplate, completedDates, todayKey]);
+  }, [plan?.generatedAt, plan?.weekTemplate, completedDates, todayKey, intake.daysPerWeek]);
 
   const todayIsTrainingDay = plan?.weekTemplate && !isRestTemplateDay(plan.weekTemplate[weekdayOf(today)]);
   const todayDone = completedDates.has(todayKey);
@@ -156,7 +179,10 @@ export default function PreEnlistmentWorkout({ state, updateState }) {
     return map;
   }, [logs]);
   const weekStart = startOfWeekMonday(today);
-  const { currentStreak, longestStreak } = useMemo(() => computeStreaks(dayStatus, today), [dayStatus, todayKey]);
+  const { currentStreak, longestStreak } = useMemo(
+    () => computeWeeklyStreaks(completedLogs, intake.daysPerWeek, today),
+    [completedLogs, intake.daysPerWeek, todayKey],
+  );
   const calendarWeeks = useMemo(() => buildCalendar(dayStatus, weekStart), [dayStatus, weekStart.getTime()]);
   const history = useMemo(() => [...completedLogs].reverse(), [completedLogs]);
 
@@ -190,15 +216,12 @@ export default function PreEnlistmentWorkout({ state, updateState }) {
 
       {/* ── SECTION A — UP NEXT (rolling dated queue) ─────────── */}
       <section className="wk-section">
-        <div className="wk-section-head">
-          <span className="label">▲ UP NEXT</span>
-          <div className="wk-section-tools">
-            {generating && <span className="mono-dim wk-generating"><span className="blink">●</span> BUILDING YOUR PLAN…</span>}
-            <button className="wk-link-btn" onClick={() => setEditingIntake(true)}>ADJUST INPUTS</button>
-          </div>
-        </div>
+        <SectionHead id="upnext" label="▲ UP NEXT" collapsed={collapsed.upnext} onToggle={toggleSection}>
+          {generating && <span className="mono-dim wk-generating"><span className="blink">●</span> BUILDING YOUR PLAN…</span>}
+          <button className="wk-link-btn" onClick={() => setEditingIntake(true)}>ADJUST INPUTS</button>
+        </SectionHead>
 
-        {!plan ? (
+        {collapsed.upnext ? null : !plan ? (
           <Panel className="wk-empty"><p className="mono-dim">Building your plan from your inputs…</p></Panel>
         ) : (
           <>
@@ -211,7 +234,6 @@ export default function PreEnlistmentWorkout({ state, updateState }) {
               <div className="wk-q-row">
                 {queue.map((session) => {
                   const expanded = expandedKey === session.key;
-                  const startable = session.isToday;
                   return (
                     <Panel key={session.key} className={`wk-q-card${session.isToday ? ' is-today' : ''}`}>
                       <div className="wk-q-top">
@@ -234,13 +256,9 @@ export default function PreEnlistmentWorkout({ state, updateState }) {
                           {expanded ? '▲ less' : `▾ ${session.exercises.length - 3} more`}
                         </button>
                       )}
-                      {startable ? (
-                        <button className="btn sm full wk-start" onClick={() => navigate(`/enlist/workout-session/${session.key}`)}>
-                          START WORKOUT
-                        </button>
-                      ) : (
-                        <div className="wk-q-scheduled mono-dim">SCHEDULED · {session.weekday.slice(0, 3).toUpperCase()}</div>
-                      )}
+                      <button className="btn sm full wk-start" onClick={() => navigate(`/enlist/workout-session/${session.key}`)}>
+                        START WORKOUT
+                      </button>
                     </Panel>
                   );
                 })}
@@ -252,7 +270,8 @@ export default function PreEnlistmentWorkout({ state, updateState }) {
 
       {/* ── SECTION B — STREAK CALENDAR ───────────────────────── */}
       <section className="wk-section">
-        <div className="wk-section-head"><span className="label">▲ YOUR STREAK</span></div>
+        <SectionHead id="streak" label="▲ YOUR STREAK" collapsed={collapsed.streak} onToggle={toggleSection} />
+        {!collapsed.streak && (
         <Panel className="wk-streak-card">
           <div className="wk-streak-grid-wrap">
             <div className="wk-streak-weekdays">
@@ -275,7 +294,7 @@ export default function PreEnlistmentWorkout({ state, updateState }) {
           <div className="wk-streak-stats">
             <div className="wk-streak-stat">
               <span className="stat-val" style={{ fontSize: 34, color: 'var(--amber)' }}>{currentStreak}</span>
-              <span className="label">DAY STREAK</span>
+              <span className="label">WEEK STREAK</span>
             </div>
             <div className="wk-streak-stat">
               <span className="stat-val" style={{ fontSize: 34, color: 'var(--text)' }}>{longestStreak}</span>
@@ -290,12 +309,15 @@ export default function PreEnlistmentWorkout({ state, updateState }) {
             </div>
           </div>
         </Panel>
+        )}
       </section>
 
       {/* ── SECTION C — HISTORY ───────────────────────────────── */}
       <section className="wk-section">
-        <div className="wk-section-head"><span className="label">▲ PAST WORKOUTS</span></div>
-        {history.length === 0 ? (
+        <SectionHead id="history" label="▲ PAST WORKOUTS" collapsed={collapsed.history} onToggle={toggleSection}>
+          {history.length > 0 && <span className="mono-dim wk-section-count">{history.length}</span>}
+        </SectionHead>
+        {collapsed.history ? null : history.length === 0 ? (
           <Panel className="wk-empty"><p className="mono-dim">No workouts logged yet. Start your first session above.</p></Panel>
         ) : (
           <div className="wk-history">
@@ -431,23 +453,37 @@ function IntakeForm({ pes, goal, latestAttempt, initial, onSubmit, onCancel }) {
   );
 }
 
-// Current streak = consecutive completed days ending today or yesterday.
-function computeStreaks(dayStatus, today) {
-  const completedKeys = new Set([...dayStatus.entries()].filter(([, s]) => s === 'full').map(([k]) => k));
+// Weekly streak = consecutive weeks (Monday→Sunday) in which the user hit their
+// target number of sessions. Finish all your sessions for the week and the week
+// counts as 1; chain weeks to grow the streak. The in-progress current week
+// never breaks the streak before it's over — it only extends it once met.
+function computeWeeklyStreaks(completedLogs, daysPerWeek, today) {
+  const target = Math.max(1, Number(daysPerWeek) || 1);
+  const perWeek = new Map(); // monday-key -> completed session count
+  completedLogs.forEach((log) => {
+    const wk = localKey(startOfWeekMonday(new Date(log.date)));
+    perWeek.set(wk, (perWeek.get(wk) || 0) + 1);
+  });
+  const met = (mondayKey) => (perWeek.get(mondayKey) || 0) >= target;
+
+  // Current streak: walk back week by week from this week. If the current week
+  // isn't met yet, start from last week so an unfinished week doesn't reset it.
   let current = 0;
-  const cursor = new Date(today);
-  if (!completedKeys.has(localKey(cursor))) cursor.setDate(cursor.getDate() - 1);
-  while (completedKeys.has(localKey(cursor))) {
+  const cursor = startOfWeekMonday(today);
+  if (!met(localKey(cursor))) cursor.setDate(cursor.getDate() - 7);
+  while (met(localKey(cursor))) {
     current += 1;
-    cursor.setDate(cursor.getDate() - 1);
+    cursor.setDate(cursor.getDate() - 7);
   }
-  const sorted = [...completedKeys].sort();
+
+  // Longest run of consecutive met weeks across all history.
+  const metMondays = [...perWeek.keys()].filter(met).sort();
   let longest = 0;
   let run = 0;
   let prev = null;
-  sorted.forEach((key) => {
+  metMondays.forEach((key) => {
     const d = new Date(key);
-    if (prev && Math.round((d - prev) / 86400000) === 1) run += 1;
+    if (prev && Math.round((d - prev) / 86400000) === 7) run += 1;
     else run = 1;
     longest = Math.max(longest, run);
     prev = d;
