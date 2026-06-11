@@ -3,11 +3,11 @@ import Insignia from '../shared/Insignia';
 
 const SERVE_NAV = [
   { id: 'ops',      label: 'OPS',    glyph: '⊞', path: '/serve' },
-  { id: 'ippt',     label: 'IPPT',   glyph: '▲', path: '/train' },
-  { id: 'intel',    label: 'INTEL',  glyph: '◎', path: '/training-feed' },
-  { id: 'sentinel', label: 'MIND',   glyph: '◈', path: '/journal' },
-  { id: 'support',  label: 'SQUAD',  glyph: '⊕', path: '/buddy-tap' },
-  { id: 'profile',  label: 'RECORD', glyph: '◮', path: '/profile' },
+  { id: 'ippt',     label: 'TRAIN',  glyph: '▲', path: '/train' },
+  { id: 'intel',    label: 'FEED',   glyph: '≡', path: '/training-feed' },
+  { id: 'sentinel', label: 'SENTL',  glyph: '◉', path: '/journal' },
+  { id: 'support',  label: 'BUDDY',  glyph: '⊙', path: '/buddy-tap' },
+  { id: 'profile',  label: 'RECORD', glyph: '◧', path: '/profile' },
 ];
 
 const ENLIST_NAV = [
@@ -30,7 +30,7 @@ export default function CommandRail({ branch = 'army', activeModule = 'serve', p
 
   const isActive = (path) => {
     if (path === '/serve' || path === '/enlist') return pathname === path;
-    return pathname.startsWith(path);
+    return pathname === path || pathname.startsWith(path + '/');
   };
 
   return (

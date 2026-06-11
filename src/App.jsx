@@ -530,9 +530,17 @@ function AppShell({ state, updateState }) {
 
 function getMissionVariant(title, activeModule) {
   if (title.includes('IPPT') || title.includes('Fitness') || title.includes('Workout')) return 'ippt';
-  if (title.includes('Sentinel')) return 'sentinel';
-  if (title.includes('Buddy') || title.includes('Wall')) return 'buddy';
+  if (title.toLowerCase().includes('sentinel')) return 'sentinel';
+  if (title.includes('Buddy')) return 'buddy';
+  if (title.includes('Wall')) return 'wall';
   if (title.includes('Record')) return 'record';
+  if (title.includes('Training Feed') || title.includes('Peer Intel')) return 'feed';
+  if (title.includes('Support')) return 'support';
+  if (title.includes('Chat') || title.includes('Chatbot')) return 'chat';
+  if (title.includes('Advice') || title.includes('Batch')) return 'advice';
+  if (title.includes('Expect')) return 'expect';
+  if (title.includes('Prep') || title.includes('Fitness Prep')) return 'prep';
+  if (title.includes('Strava')) return 'strava';
   if (activeModule === 'enlist') return 'enlist';
   return 'intel';
 }
@@ -553,26 +561,38 @@ function MissionIcon({ title, variant }) {
   if (variant === 'ippt') {
     return <svg {...common}><path d="M6 7v10M18 7v10M3 9v6M21 9v6M6 12h12" /></svg>;
   }
-  if (title.includes('Sentinel')) {
+  if (variant === 'sentinel') {
     return <svg {...common}><path d="M12 21s-7-4.4-7-10a4 4 0 0 1 7-2.4A4 4 0 0 1 19 11c0 5.6-7 10-7 10Z" /><path d="M8.5 13h2l1.2-2.5 1.7 5 1.1-2.5h1" /></svg>;
   }
-  if (title.includes('Buddy')) {
+  if (variant === 'buddy') {
     return <svg {...common}><path d="M8 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM16 10a2.5 2.5 0 1 0 0-5" /><path d="M3 19c.4-3.3 2-5 5-5s4.6 1.7 5 5M14 14c3.5 0 5.3 1.7 5.7 5" /></svg>;
   }
-  if (title.includes('Wall')) {
+  if (variant === 'wall') {
     return <svg {...common}><path d="M7 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM17 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" /><path d="M2.5 19c.4-3.4 1.9-5 4.5-5s4.1 1.6 4.5 5M12.5 19c.4-3.4 1.9-5 4.5-5s4.1 1.6 4.5 5" /></svg>;
   }
-  if (title.includes('Support')) {
+  if (variant === 'support') {
     return <svg {...common}><circle cx="12" cy="12" r="8" /><circle cx="12" cy="12" r="3" /><path d="m6.3 6.3 3.6 3.6M14.1 14.1l3.6 3.6M17.7 6.3l-3.6 3.6M9.9 14.1l-3.6 3.6" /></svg>;
   }
   if (variant === 'record') {
     return <svg {...common}><path d="M6 3h9l3 3v15H6z" /><path d="M15 3v4h4M9 12h6M9 16h4" /></svg>;
   }
-  if (title.includes('Chat')) {
+  if (variant === 'feed') {
+    return <svg {...common}><path d="M4 12h16M4 6h16M4 18h10" /></svg>;
+  }
+  if (variant === 'chat') {
     return <svg {...common}><path d="M4 5h16v11H9l-5 4z" /><path d="M8 9h8M8 12h5" /></svg>;
   }
-  if (title.includes('Advice')) {
+  if (variant === 'advice') {
     return <svg {...common}><path d="M5 4h14v16H5zM8 8h8M8 12h8M8 16h5" /></svg>;
+  }
+  if (variant === 'expect') {
+    return <svg {...common}><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 3" /></svg>;
+  }
+  if (variant === 'prep') {
+    return <svg {...common}><path d="M12 2L2 7l10 5 10-5-10-5z" /><path d="M2 17l10 5 10-5M2 12l10 5 10-5" /></svg>;
+  }
+  if (variant === 'strava') {
+    return <svg {...common}><path d="M13 4L8 14h4l-1 6 7-10h-4z" /></svg>;
   }
   return <svg {...common}><path d="M4 19V5h16v14M8 5V3h8v2M8 10h8M8 14h5" /></svg>;
 }
@@ -594,6 +614,13 @@ function MissionCard({ block, activeModule, onOpen }) {
   );
 }
 
+const BRANCH_DISPLAY = {
+  army:  { unit: null,    vocation: null        },
+  navy:  { unit: 'RSN',  vocation: 'Naval'     },
+  air:   { unit: 'RSAF', vocation: 'Air Force' },
+  dis:   { unit: 'DIS',  vocation: 'Cyber'     },
+};
+
 function OperatorHero({ profile, activeModule, branch }) {
   const normalizedBranch = String(branch || 'army').trim().toLowerCase();
   const operatorImage = OPERATOR_BY_BRANCH[normalizedBranch] || armyOperator;
@@ -605,6 +632,9 @@ function OperatorHero({ profile, activeModule, branch }) {
         : operatorImage === disOperator
           ? 'Digital and Intelligence Service serviceman'
           : 'Singapore serviceman';
+  const branchDisplay = BRANCH_DISPLAY[normalizedBranch] || BRANCH_DISPLAY.army;
+  const displayUnit = branchDisplay.unit || profile.unit || '3 SIR';
+  const displayVocation = branchDisplay.vocation || profile.vocation || 'Infantry';
 
   return (
     <section className="ops-operator-hero" aria-label="Current service operator">
@@ -613,7 +643,7 @@ function OperatorHero({ profile, activeModule, branch }) {
         <span className="ops-eyebrow">{activeModule === 'serve' ? 'Active service operator' : 'Pre-enlistment operator'}</span>
         <h1>{toTitleCase(profile.fullName)}</h1>
         <p>
-          PES {profile.pesStatus} · {profile.unit} · {(profile.vocation || 'Infantry').toUpperCase()}
+          PES {profile.pesStatus} · {displayUnit} · {displayVocation.toUpperCase()}
         </p>
       </div>
       <div className="ops-operator-visual">
@@ -673,12 +703,7 @@ function HomeDashboard({ state, updateState, phase, activeModule }) {
               to: '/train',
             },
             {
-              title: 'Training Feed',
-              body: 'Post IPPT results and training milestones. React and reply to your platoon mates.',
-              to: '/training-feed',
-            },
-            {
-              title: 'Sentinel',
+              title: 'SENTINEL',
               body: 'Check in privately, spot how you have been feeling, and find support when you need it.',
               to: '/journal',
             },
@@ -707,14 +732,9 @@ function HomeDashboard({ state, updateState, phase, activeModule }) {
     : null;
   const streakDays = getJournalStreak(state.journal.entries);
   const branch = state.ui?.branch || 'army';
-  const missionBlocks = [
-    ...moduleContent.detailBlocks,
-    {
-      title: 'Service Record',
-      body: 'Keep your profile, milestones, and service details together in one place.',
-      to: '/profile',
-    },
-  ];
+  const missionBlocks = moduleContent.detailBlocks.filter(
+    (b) => b.title !== 'Service Record' && b.title !== 'Connect Strava'
+  );
   const splitIndex = Math.ceil(missionBlocks.length / 2);
   const outreachPrompt = (state.support?.outreachPrompts || []).find(
     (prompt) => prompt.status !== 'dismissed' && (
@@ -727,7 +747,8 @@ function HomeDashboard({ state, updateState, phase, activeModule }) {
   return (
     <div className={`dash-page ops-hub ops-branch-${branch}`}>
       <ScreenHeader
-        title="Operations Hub"
+        eyebrow="▲ SERVE · OPERATIONS HUB"
+        title="OPERATIONS HUB"
         className="ops-hub-header"
         action={
           <div className="ops-header-stats">
@@ -1344,7 +1365,8 @@ function BuddyTapScreen({ state, updateState }) {
   return (
     <section>
       <ScreenHeader
-        title="Buddy Tap"
+        eyebrow="▲ SERVE · BUDDY TAP"
+        title="BUDDY TAP"
         subtitle="Anonymous single-action concern flag. Three independent taps trigger a supportive message directly to the person."
       />
       <div className="badge-row">
@@ -1979,6 +2001,7 @@ function TrainScreen({ state, updateState }) {
             <div style={{ display: 'flex', gap: 8 }}>
               <button className="btn ghost sm" onClick={() => { setForm(BLANK_FORM()); setShowModal(true); }}>LOG IPPT</button>
               <button className="btn ghost sm" onClick={() => { setSwimForm(BLANK_SWIM_FORM()); setShowSwimModal(true); }}>LOG SWIM</button>
+              <button className="btn sm" style={{ background: '#FC4C02', borderColor: '#FC4C02', color: '#fff' }} onClick={() => navigate('/serve/strava-connect')}>+ Connect Strava</button>
             </div>
           </div>
           {stationRows.map((s) => (
@@ -3083,7 +3106,8 @@ function JournalScreen({ state, updateState }) {
     return (
       <section>
         <ScreenHeader
-          title="Sentinel"
+          eyebrow="▲ SERVE · SENTINEL"
+          title="SENTINEL"
           subtitle="Private reflection with NLP used only to estimate your own emotional trend."
         />
         <div className="alert-card">
@@ -3145,7 +3169,8 @@ function JournalScreen({ state, updateState }) {
     return (
       <section>
         <ScreenHeader
-          title="Sentinel"
+          eyebrow="▲ SERVE · SENTINEL"
+          title="SENTINEL"
           subtitle="Private reflection with NLP used only to estimate your own emotional trend."
         />
         <div className="alert-card">
@@ -3164,7 +3189,8 @@ function JournalScreen({ state, updateState }) {
   return (
     <div className="sentinel-page">
       <ScreenHeader
-        title="Sentinel"
+        eyebrow="▲ SERVE · SENTINEL"
+        title="SENTINEL"
         subtitle="A private place to pause and write."
       />
       <div className="sentinel-privacy">
@@ -3848,6 +3874,8 @@ function ProfileScreen({ state, updateState, activeModule }) {
   return (
     <div style={{ height: '100%', overflow: 'auto', padding: '28px 36px' }}>
       <div style={{ maxWidth: 1120, margin: '0 auto' }}>
+
+        <ScreenHeader eyebrow="▲ SERVE · SERVICE RECORD" title="SERVICE RECORD" />
 
         {/* Identity panel */}
         <Panel elevated ticks style={{ padding: 30, marginBottom: 14, display: 'flex', alignItems: 'center', gap: 22 }}>
