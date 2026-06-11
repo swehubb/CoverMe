@@ -3048,6 +3048,7 @@ function JournalScreen({ state, updateState }) {
   const navigate = useNavigate();
   const [entry, setEntry] = useState('');
   const [saving, setSaving] = useState(false);
+  const [crisisState, setCrisisState] = useState(false);
   const [dismissedDip, setDismissedDip] = useState(false);
   const [trendInfo, setTrendInfo] = useState(null);
   const [expandedReflectionId, setExpandedReflectionId] = useState(null);
@@ -3106,8 +3107,8 @@ function JournalScreen({ state, updateState }) {
     const result = await nlpService.analyze(entry.trim());
 
     if (result.crisis) {
+      setCrisisState(true);
       setSaving(false);
-      navigate('/escalation?crisis=true');
       return;
     }
 
@@ -3302,6 +3303,32 @@ function JournalScreen({ state, updateState }) {
         </div>
       </section>
 
+      {crisisState && (
+        <div className="overlay-bg">
+          <Panel elevated className="modal-card" style={{ borderColor: 'rgba(192,57,43,0.4)' }}>
+            <span className="label" style={{ color: '#d96055', marginBottom: 10 }}>IMMEDIATE SUPPORT</span>
+            <h2 className="h-title" style={{ fontSize: 32, marginBottom: 14 }}>YOU DON'T HAVE TO CARRY THIS ALONE.</h2>
+            <p style={{ color: 'var(--text-dim)', lineHeight: 1.6, marginBottom: 24 }}>
+              What you wrote matters. These lines are confidential and reach people trained to help right now.{' '}
+              <strong style={{ color: 'var(--text)' }}>No commander is notified.</strong>
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 24 }}>
+              {(crisisResources.resources || []).map((r) => (
+                <div key={r.name} className="crisis-resource-row">
+                  <span style={{ fontFamily: 'var(--font-head)', fontWeight: 700, letterSpacing: '0.03em' }}>{r.name}</span>
+                  <span className="mono" style={{ color: 'var(--amber)', fontSize: 18 }}>{r.number}</span>
+                </div>
+              ))}
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 8 }}>
+              <button className="primary-button" onClick={() => { setCrisisState(false); navigate('/escalation?crisis=true'); }}>
+                SEE YOUR SUPPORT OPTIONS →
+              </button>
+              <button className="btn neutral full" onClick={() => setCrisisState(false)}>I'VE SEEN THIS → CLOSE</button>
+            </div>
+          </Panel>
+        </div>
+      )}
     </div>
   );
 }
