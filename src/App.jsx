@@ -718,9 +718,9 @@ function HomeDashboard({ state, updateState, phase, activeModule }) {
               to: '/buddy-tap',
             },
             {
-              title: 'Peer Intel Feed',
-              body: 'Share training wins, swap encouragement, and react to what your mates are achieving.',
-              to: '/training-feed',
+              title: 'Peer Support Wall',
+              body: 'Ask questions, share experiences, and support your platoon mates anonymously.',
+              to: '/peer-support',
             },
             {
               title: 'Connect Strava',
