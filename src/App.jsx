@@ -703,6 +703,11 @@ function HomeDashboard({ state, updateState, phase, activeModule }) {
               to: '/train',
             },
             {
+              title: 'Training Feed',
+              body: 'Post IPPT results and training milestones. React and reply to your platoon mates.',
+              to: '/training-feed',
+            },
+            {
               title: 'SENTINEL',
               body: 'Check in privately, spot how you have been feeling, and find support when you need it.',
               to: '/journal',
