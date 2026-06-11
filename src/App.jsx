@@ -3295,6 +3295,9 @@ function JournalScreen({ state, updateState }) {
               </div>
             ))}
           </div>
+          <button className="sentinel-secondary-button" style={{ marginTop: 16 }} onClick={() => navigate('/escalation')}>
+            View support options
+          </button>
         </section>
       </div>
 
