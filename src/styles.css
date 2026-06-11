@@ -224,7 +224,7 @@ select.inp { cursor:pointer; appearance:none; background-image:url("data:image/s
 }
 .screen-page-header .h-display {
   margin:0;
-  font-size:48px;
+  font-size:52px;
   line-height:1;
 }
 .screen-page-eyebrow {
@@ -423,7 +423,7 @@ select.inp { cursor:pointer; appearance:none; background-image:url("data:image/s
 }
 .mission-sentinel .ops-mission-status,.mission-sentinel .ops-mission-open b { color:#d2b894; }
 .mission-sentinel .ops-mission-icon { color:#d2b894; border-color:rgba(210,184,148,0.3); background:rgba(117,95,70,0.2); }
-.mission-sentinel h2 { font-family:var(--font-body); font-size:20px; font-weight:600; text-transform:none; }
+.mission-sentinel h2 { font-family:var(--font-head); font-size:25px; font-weight:700; text-transform:uppercase; }
 .mission-sentinel p { color:#b8aea0; }
 .mission-buddy { background:linear-gradient(135deg,rgba(74,112,92,0.15),transparent 60%),rgba(17,21,18,0.92); }
 .mission-enlist { background:linear-gradient(135deg,rgba(99,113,76,0.13),transparent 62%),rgba(19,20,17,0.92); }
@@ -578,6 +578,7 @@ select.inp { cursor:pointer; appearance:none; background-image:url("data:image/s
   background:var(--sentinel-bg);
 }
 .sentinel-page .screen-page-header { margin-bottom:22px; }
+.sentinel-page .screen-page-header .h-display { font-size:52px; }
 .sentinel-page .screen-page-header p { color:var(--sentinel-copy); font-size:16px; }
 .sentinel-privacy {
   margin-bottom:22px;
